@@ -24,6 +24,8 @@ interface AppState {
   darkMode: boolean;
   user: AppUser | null;
   sidebarOpen: boolean;
+  pendingDeleteRequestId: string | null;
+  pendingDeleteEmployeeId: string | null;
 
   setView: (view: ViewType) => void;
   setSelectedEmployee: (id: string | null) => void;
@@ -31,6 +33,7 @@ interface AppState {
   setDarkMode: (dark: boolean) => void;
   setUser: (user: AppUser | null) => void;
   setSidebarOpen: (open: boolean) => void;
+  setPendingDeleteRequest: (requestId: string | null, employeeId: string | null) => void;
   reset: () => void;
 }
 
@@ -41,6 +44,8 @@ const initialState = {
   darkMode: false,
   user: null as AppUser | null,
   sidebarOpen: false,
+  pendingDeleteRequestId: null as string | null,
+  pendingDeleteEmployeeId: null as string | null,
 };
 
 export const useAppStore = create<AppState>((set) => ({
@@ -51,5 +56,7 @@ export const useAppStore = create<AppState>((set) => ({
   setDarkMode: (dark) => set({ darkMode: dark }),
   setUser: (user) => set({ user }),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
+  setPendingDeleteRequest: (requestId, employeeId) =>
+    set({ pendingDeleteRequestId: requestId, pendingDeleteEmployeeId: employeeId }),
   reset: () => set(initialState),
 }));

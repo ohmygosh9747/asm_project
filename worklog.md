@@ -75,3 +75,36 @@ Stage Summary:
 - Confirmation dialog with appropriate messaging per role
 - Admin can provide a reason for deletion request
 - Existing delete-requests approval workflow (DeleteRequestsView) handles the Super Admin review
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Implement notification-driven deletion workflow with Confirm/Reject on employee profile, mark-as-read on click, and navbar layout fix
+
+Work Log:
+- Updated Zustand store: Added `pendingDeleteRequestId`, `pendingDeleteEmployeeId`, and `setPendingDeleteRequest()` to track when Super Admin navigates from a notification to review a delete request
+- Updated `/api/delete-requests` POST: Changed notification link from `"delete-requests"` to `"employee-detail:EMPLOYEE_ID:delete:REQUEST_ID"` format so Super Admin is taken directly to the employee's profile page
+- Updated EmployeeDetailView: 
+  - When `isReviewingDelete` is true (Super Admin came from notification), toolbar shows "Confirm Delete" and "Reject" buttons instead of Edit/Delete
+  - Confirm Delete calls `PUT /api/delete-requests` with `status: "approved"` → soft-deletes employee + notifies requesting admin
+  - Reject calls `PUT /api/delete-requests` with `status: "rejected"` → notifies requesting admin of rejection
+  - Back button clears the pending delete request state
+- Updated NotificationsView:
+  - Clicking a notification now navigates to the appropriate page based on the link
+  - Delete request notifications with `employee-detail:ID:delete:REQUEST_ID` link → navigates to employee detail with review mode active
+  - Marks notification as read on click (removes unread badge)
+  - Other notification links navigate to their respective views
+- Updated Header layout:
+  - Added `flex-1` spacer between search bar and right-side action buttons
+  - Dark mode toggle, notification bell, and logout are now pushed to the far right
+  - Added `ml-6` margin for breathing space between search and action buttons
+- Build compiled successfully with no errors
+
+Stage Summary:
+- Full notification-driven deletion workflow implemented:
+  1. Admin requests deletion → Super Admin gets notification
+  2. Super Admin clicks notification → taken to employee profile with Confirm/Reject buttons
+  3. Super Admin confirms → employee soft-deleted + Admin notified of approval
+  4. Super Admin rejects → Admin notified of rejection
+- Notification click marks as read and removes unread badge
+- Navbar layout: search on left, spacer, then dark mode/notification/logout on far right

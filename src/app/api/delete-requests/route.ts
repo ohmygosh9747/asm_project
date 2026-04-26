@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const deleteRequest = await db.deleteRequest.create({ data: body });
 
-    // Create notification for super admins
+    // Create notification for super admins with employee & request IDs in link
     const superAdmins = await db.user.findMany({ where: { role: "super_admin" } });
     for (const admin of superAdmins) {
       await db.notification.create({
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
           title: "Delete Request",
           message: `Request to delete employee: ${body.employeeName}`,
           type: "warning",
-          link: "delete-requests",
+          link: `employee-detail:${body.employeeId}:delete:${deleteRequest.id}`,
         },
       });
     }

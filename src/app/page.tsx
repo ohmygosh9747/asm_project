@@ -557,7 +557,7 @@ function Header() {
 
   return (
     <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-emerald-200/30 dark:border-emerald-800/30">
-      <div className="flex items-center gap-3 px-4 py-3">
+      <div className="flex items-center px-4 py-3">
         {/* Mobile menu */}
         <Button
           variant="ghost"
@@ -579,7 +579,11 @@ function Header() {
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Right-side actions */}
+        <div className="flex items-center gap-2 ml-6">
           {/* Dark mode toggle */}
           <Button variant="ghost" size="icon" onClick={toggleDarkMode} className="relative">
             <AnimatePresence mode="wait">
@@ -914,13 +918,18 @@ function DashboardView() {
 // ============================================================
 
 function EmployeeDetailView() {
-  const { selectedEmployeeId, setView, user } = useAppStore();
+  const { selectedEmployeeId, setView, user, pendingDeleteRequestId, pendingDeleteEmployeeId, setPendingDeleteRequest } = useAppStore();
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteReason, setDeleteReason] = useState("");
   const [deleting, setDeleting] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
+
+  // Determine if we're in "review delete request" mode (Super Admin came from notification)
+  const isReviewingDelete = user?.role === "super_admin" &&
+    !!pendingDeleteRequestId &&
+    pendingDeleteEmployeeId === selectedEmployeeId;
 
   useEffect(() => {
     if (!selectedEmployeeId) return;
@@ -996,35 +1005,130 @@ function EmployeeDetailView() {
     <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex items-center justify-between no-print">
-        <Button variant="ghost" onClick={() => setView("dashboard")} className="gap-2">
+        <Button variant="ghost" onClick={() => {
+          setPendingDeleteRequest(null, null);
+          setView("dashboard");
+        }} className="gap-2">
           <ChevronLeft className="h-4 w-4" />
           Back
         </Button>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => {
-            useAppStore.getState().setSelectedEmployee(employee.id);
-            setView("employee-form");
-          }}>
-            <Edit className="h-4 w-4 mr-1" />
-            Edit
-          </Button>
-          <Button variant="outline" size="sm" onClick={handlePrint}>
-            <Printer className="h-4 w-4 mr-1" />
-            Print
-          </Button>
-          <Button size="sm" onClick={handleDownloadPDF} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-            <Download className="h-4 w-4 mr-1" />
-            PDF
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => setDeleteDialogOpen(true)}
-          >
-            <Trash2 className="h-4 w-4 mr-1" />
-            Delete
-          </Button>
-        </div>
+        {isReviewingDelete ? (
+          /* Super Admin reviewing a delete request — show Confirm Delete + Reject */
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrint}
+            >
+              <Printer className="h-4 w-4 mr-1" />
+              Print
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleDownloadPDF}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              <Download className="h-4 w-4 mr-1" />
+              PDF
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deleting}
+              onClick={async () => {
+                if (!employee || !pendingDeleteRequestId) return;
+                setDeleting(true);
+                try {
+                  // Approve the delete request → soft-delete employee
+                  const res = await fetch("/api/delete-requests", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      id: pendingDeleteRequestId,
+                      status: "approved",
+                      reviewedBy: user?.id,
+                    }),
+                  });
+                  if (res.ok) {
+                    toast.success(`"${employee.fullName}" has been deleted`);
+                    setPendingDeleteRequest(null, null);
+                    setView("dashboard");
+                  } else {
+                    toast.error("Failed to confirm deletion");
+                  }
+                } catch {
+                  toast.error("Failed to confirm deletion");
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+            >
+              {deleting ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
+              Confirm Delete
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={deleting}
+              onClick={async () => {
+                if (!pendingDeleteRequestId) return;
+                setDeleting(true);
+                try {
+                  const res = await fetch("/api/delete-requests", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      id: pendingDeleteRequestId,
+                      status: "rejected",
+                      reviewedBy: user?.id,
+                    }),
+                  });
+                  if (res.ok) {
+                    toast.success("Deletion request rejected");
+                    setPendingDeleteRequest(null, null);
+                    setView("dashboard");
+                  } else {
+                    toast.error("Failed to reject request");
+                  }
+                } catch {
+                  toast.error("Failed to reject request");
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+            >
+              <XCircle className="h-4 w-4 mr-1" />
+              Reject
+            </Button>
+          </div>
+        ) : (
+          /* Normal mode — show Edit, Print, PDF, Delete */
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => {
+              useAppStore.getState().setSelectedEmployee(employee.id);
+              setView("employee-form");
+            }}>
+              <Edit className="h-4 w-4 mr-1" />
+              Edit
+            </Button>
+            <Button variant="outline" size="sm" onClick={handlePrint}>
+              <Printer className="h-4 w-4 mr-1" />
+              Print
+            </Button>
+            <Button size="sm" onClick={handleDownloadPDF} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              <Download className="h-4 w-4 mr-1" />
+              PDF
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setDeleteDialogOpen(true)}
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              Delete
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Delete Confirmation Dialog */}
@@ -1875,7 +1979,7 @@ function DeleteRequestsView() {
 // ============================================================
 
 function NotificationsView() {
-  const { user } = useAppStore();
+  const { user, setView, setSelectedEmployee, setPendingDeleteRequest } = useAppStore();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -1932,6 +2036,32 @@ function NotificationsView() {
     }
   };
 
+  const handleNotificationClick = (notif: NotificationItem) => {
+    // Mark as read first
+    if (!notif.read) markAsRead(notif.id);
+
+    // Parse the link and navigate accordingly
+    if (notif.link) {
+      // Format: "employee-detail:EMPLOYEE_ID:delete:REQUEST_ID"
+      if (notif.link.startsWith("employee-detail:")) {
+        const parts = notif.link.split(":");
+        const employeeId = parts[1];
+        const action = parts[2]; // "delete" or other actions
+        const requestId = parts[3];
+
+        if (employeeId) {
+          setSelectedEmployee(employeeId);
+          if (action === "delete" && requestId && user?.role === "super_admin") {
+            setPendingDeleteRequest(requestId, employeeId);
+          }
+          setView("employee-detail");
+        }
+      } else if (notif.link === "delete-requests") {
+        setView("delete-requests");
+      }
+    }
+  };
+
   const typeIcon = (type: string) => {
     switch (type) {
       case "success": return <CheckCircle2 className="h-5 w-5 text-emerald-500" />;
@@ -1980,9 +2110,7 @@ function NotificationsView() {
                       ? "bg-emerald-50/50 dark:bg-emerald-950/20 border-l-4 border-l-emerald-500"
                       : ""
                   }`}
-                  onClick={() => {
-                    if (!notif.read) markAsRead(notif.id);
-                  }}
+                  onClick={() => handleNotificationClick(notif)}
                 >
                   <CardContent className="p-4">
                     <div className="flex items-start gap-3">
