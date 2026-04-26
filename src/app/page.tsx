@@ -914,9 +914,12 @@ function DashboardView() {
 // ============================================================
 
 function EmployeeDetailView() {
-  const { selectedEmployeeId, setView } = useAppStore();
+  const { selectedEmployeeId, setView, user } = useAppStore();
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1013,8 +1016,116 @@ function EmployeeDetailView() {
             <Download className="h-4 w-4 mr-1" />
             PDF
           </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => setDeleteDialogOpen(true)}
+          >
+            <Trash2 className="h-4 w-4 mr-1" />
+            Delete
+          </Button>
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              {user?.role === "super_admin" ? "Delete Employee" : "Request Deletion"}
+            </DialogTitle>
+            <DialogDescription>
+              {user?.role === "super_admin"
+                ? `Are you sure you want to permanently delete "${employee?.fullName}"? This action cannot be undone.`
+                : `Your request to delete "${employee?.fullName}" will be sent to the Super Admin for approval. The employee will only be removed after approval.`}
+            </DialogDescription>
+          </DialogHeader>
+          {user?.role === "admin" && (
+            <div className="py-2">
+              <Label htmlFor="delete-reason" className="text-sm font-medium">
+                Reason for deletion
+              </Label>
+              <Textarea
+                id="delete-reason"
+                placeholder="Enter reason for requesting deletion..."
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                className="mt-1.5"
+                rows={3}
+              />
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteDialogOpen(false);
+                setDeleteReason("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={async () => {
+                if (!employee) return;
+                setDeleting(true);
+                try {
+                  if (user?.role === "super_admin") {
+                    // Super Admin: Directly delete the employee
+                    const res = await fetch(`/api/employees/${employee.id}`, {
+                      method: "DELETE",
+                    });
+                    if (res.ok) {
+                      toast.success(`"${employee.fullName}" has been deleted permanently`);
+                      setDeleteDialogOpen(false);
+                      setDeleteReason("");
+                      setView("dashboard");
+                    } else {
+                      toast.error("Failed to delete employee");
+                    }
+                  } else {
+                    // Admin: Create a delete request for Super Admin approval
+                    const res = await fetch("/api/delete-requests", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        employeeId: employee.id,
+                        employeeName: employee.fullName,
+                        requestedBy: user?.id,
+                        reason: deleteReason || null,
+                      }),
+                    });
+                    if (res.ok) {
+                      toast.success("Deletion request sent to Super Admin for approval");
+                      setDeleteDialogOpen(false);
+                      setDeleteReason("");
+                      setView("dashboard");
+                    } else {
+                      toast.error("Failed to submit deletion request");
+                    }
+                  }
+                } catch {
+                  toast.error(user?.role === "super_admin" ? "Failed to delete employee" : "Failed to submit deletion request");
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+            >
+              {deleting ? (
+                <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+              ) : null}
+              {deleting
+                ? "Processing..."
+                : user?.role === "super_admin"
+                ? "Delete Permanently"
+                : "Submit Request"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* CV Content */}
       <div ref={printRef} className="bg-white rounded-xl shadow-lg overflow-hidden">
