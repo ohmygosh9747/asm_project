@@ -29,19 +29,19 @@ model Employee {
   phone           String?
   email           String?
   position        String?
-  department      String?
   joinDate        String?
-  salary          String?  // encrypted
   photoUrl        String?
-  skills          String?  // comma-separated
-  experience      String?
-  education       String?
-  languages       String?
   emergencyContact String?
   address         String?
-  notes           String?
   status          String   @default("active") // active, inactive, deleted
   createdBy       String?
+
+  // New fields for CV format
+  rating          Int      @default(3) // 1-5 stars
+  companyName     String?  // "Com. Name" in CV
+  passportStatus  String?  // Passport Status
+  idStatus        String?  // ID Status
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -53,7 +53,7 @@ model Attendance {
   id          String   @id @default(cuid())
   employeeId  String
   date        String   // YYYY-MM-DD
-  status      String   @default("present") // present, absent, late, half-day
+  status      String   @default("present") // present, absent
   markedBy    String?
   createdAt   DateTime @default(now())
 

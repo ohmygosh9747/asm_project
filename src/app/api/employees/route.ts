@@ -6,18 +6,16 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const search = searchParams.get("search") || "";
-    const department = searchParams.get("department") || "";
     const status = searchParams.get("status") || "active";
 
-    const where: Record<string, unknown> = {};
+    const where: any = {};
     if (status) where.status = status;
-    if (department) where.department = department;
     if (search) {
       where.OR = [
         { fullName: { contains: search } },
         { employeeId: { contains: search } },
         { position: { contains: search } },
-        { department: { contains: search } },
+        { companyName: { contains: search } },
         { nationality: { contains: search } },
       ];
     }
@@ -38,7 +36,6 @@ export async function GET(request: NextRequest) {
       ...emp,
       passportNumber: emp.passportNumber ? decrypt(emp.passportNumber) : null,
       idNumber: emp.idNumber ? decrypt(emp.idNumber) : null,
-      salary: emp.salary ? decrypt(emp.salary) : null,
     }));
 
     return NextResponse.json(decryptedEmployees);
@@ -57,7 +54,6 @@ export async function POST(request: NextRequest) {
       ...body,
       passportNumber: body.passportNumber ? encrypt(body.passportNumber) : null,
       idNumber: body.idNumber ? encrypt(body.idNumber) : null,
-      salary: body.salary ? encrypt(body.salary) : null,
     };
 
     const employee = await db.employee.create({ data: encryptedData });
@@ -78,7 +74,6 @@ export async function PUT(request: NextRequest) {
       ...data,
       passportNumber: data.passportNumber ? encrypt(data.passportNumber) : null,
       idNumber: data.idNumber ? encrypt(data.idNumber) : null,
-      salary: data.salary ? encrypt(data.salary) : null,
     };
 
     const employee = await db.employee.update({

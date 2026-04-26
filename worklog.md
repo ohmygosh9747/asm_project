@@ -25,3 +25,28 @@ Stage Summary:
 - Database: SQLite via Prisma ORM
 - All features implemented: auth, employee CRUD, attendance, CV printing/PDF, dark mode, notifications, delete approval workflow, encryption
 - Demo credentials: superadmin@asm.com / admin123 and admin@asm.com / admin123
+---
+Task ID: 2
+Agent: Main Agent
+Task: Update ASM app per user feedback - CV format, dashboard rows, form changes
+
+Work Log:
+- Analyzed uploaded CV format image using VLM - identified Workers Profile format with Personal Details, Professional Details, Assessment Grade sections
+- Updated Prisma schema: removed department, salary, skills, experience, education, languages, notes; added rating (1-5), companyName, passportStatus, idStatus
+- Attendance simplified to present/absent only (green/red)
+- Ran db:push with --accept-data-loss flag
+- Created /api/upload route for image uploads
+- Rewrote page.tsx (2062 lines) with all changes:
+  - Dashboard: row-based table with photo, name+5star rating, 3-day attendance dots (green/red), position, View button
+  - CV: Matches uploaded format - Header (ASM logo + WORKERS PROFILE + photo), Personal Details (1-5), Professional Details (6-9), Assessment Grade (5 stars)
+  - Form: Removed dept/salary/experience/education/language/notes/nationality(old); Added African countries + India + Bangladesh; Image upload with preview; All dropdowns w-full
+- Updated seed data with 8 sample employees from African/Indian/Bangladeshi nationalities
+- Seeded database directly via Node script
+- Verified build succeeds and dev server runs
+
+Stage Summary:
+- All user-requested changes implemented
+- CV format matches uploaded image exactly
+- Dashboard is row-based with photo, rating stars, green/red attendance, position, View button
+- Form has image upload, African countries dropdown, consistent field widths
+- Server running on port 3000

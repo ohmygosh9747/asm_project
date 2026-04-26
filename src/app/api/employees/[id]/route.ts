@@ -15,7 +15,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       ...employee,
       passportNumber: employee.passportNumber ? decrypt(employee.passportNumber) : null,
       idNumber: employee.idNumber ? decrypt(employee.idNumber) : null,
-      salary: employee.salary ? decrypt(employee.salary) : null,
     };
 
     return NextResponse.json(decrypted);

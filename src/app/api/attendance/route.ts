@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
     const employeeId = searchParams.get("employeeId") || "";
     const date = searchParams.get("date") || "";
 
-    const where: Record<string, unknown> = {};
+    const where: any = {};
     if (employeeId) where.employeeId = employeeId;
     if (date) where.date = date;
 

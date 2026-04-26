@@ -29,25 +29,24 @@ import {
   Phone,
   Mail,
   CalendarDays,
-  GraduationCap,
-  Languages,
-  HeartPulse,
-  FileText,
   Menu,
   Edit,
   Building2,
   Globe,
   Award,
-  Home,
-  Filter,
+  HomeIcon,
   RefreshCw,
+  Star,
+  Camera,
+  Eye,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -66,13 +65,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -92,19 +84,16 @@ interface Employee {
   phone: string | null;
   email: string | null;
   position: string | null;
-  department: string | null;
   joinDate: string | null;
-  salary: string | null;
   photoUrl: string | null;
-  skills: string | null;
-  experience: string | null;
-  education: string | null;
-  languages: string | null;
   emergencyContact: string | null;
   address: string | null;
-  notes: string | null;
   status: string;
   createdBy: string | null;
+  rating: number;
+  companyName: string | null;
+  passportStatus: string | null;
+  idStatus: string | null;
   createdAt: string;
   updatedAt: string;
   attendances: Attendance[];
@@ -144,6 +133,21 @@ interface NotificationItem {
 }
 
 // ============================================================
+// CONSTANTS
+// ============================================================
+
+const NATIONALITIES = [
+  "Nigerian", "Ghanaian", "Kenyan", "Ugandan", "Tanzanian",
+  "Ethiopian", "Rwandan", "South African", "Egyptian", "Moroccan",
+  "Sudanese", "Senegalese", "Cameroonian", "Zimbabwean", "Mozambican",
+  "Malagasy", "Zambian", "Angolan", "Algerian", "Tunisian",
+  "Congolese", "Somali", "Ivorian", "Malian", "Burkinabe",
+  "Indian", "Bangladeshi",
+];
+
+const STATUS_OPTIONS = ["Valid", "Expired", "Pending", "N/A"];
+
+// ============================================================
 // HELPERS
 // ============================================================
 
@@ -161,6 +165,19 @@ function formatDate(dateStr: string | null): string {
   try {
     const d = new Date(dateStr + "T00:00:00");
     return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  } catch {
+    return dateStr;
+  }
+}
+
+function formatDateCV(dateStr: string | null): string {
+  if (!dateStr) return "—";
+  try {
+    const d = new Date(dateStr + "T00:00:00");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yy = String(d.getFullYear()).slice(-2);
+    return `${dd}/${mm}/${yy}`;
   } catch {
     return dateStr;
   }
@@ -195,34 +212,46 @@ function getDayLabel(daysAgo: number): string {
   return d.toLocaleDateString("en-US", { weekday: "short" });
 }
 
-const ATTENDANCE_CYCLE = ["present", "absent", "late", "half-day"] as const;
+// Star rating component
+function StarRating({
+  rating,
+  size = 14,
+  interactive = false,
+  onChange,
+}: {
+  rating: number;
+  size?: number;
+  interactive?: boolean;
+  onChange?: (rating: number) => void;
+}) {
+  const [hoverRating, setHoverRating] = useState(0);
+  const displayRating = hoverRating || rating;
 
-const ATTENDANCE_COLORS: Record<string, string> = {
-  present: "bg-emerald-500 text-white",
-  absent: "bg-red-500 text-white",
-  late: "bg-amber-500 text-white",
-  "half-day": "bg-blue-500 text-white",
-};
-
-const DEPARTMENTS = [
-  "Operations",
-  "Engineering",
-  "HSE",
-  "Human Resources",
-  "Finance",
-  "Maintenance",
-  "IT",
-  "Administration",
-  "Logistics",
-  "Quality Control",
-];
-
-const NATIONALITIES = [
-  "Saudi Arabian", "Egyptian", "Jordanian", "Omani", "Pakistani",
-  "Indian", "Filipino", "Bangladeshi", "Yemeni", "Sudanese",
-  "Syrian", "Lebanese", "Emirati", "Kuwaiti", "Bahraini",
-  "Qatari", "Iraqi", "Moroccan", "Tunisian", "Algerian",
-];
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          disabled={!interactive}
+          onClick={() => interactive && onChange?.(star)}
+          onMouseEnter={() => interactive && setHoverRating(star)}
+          onMouseLeave={() => interactive && setHoverRating(0)}
+          className={`${interactive ? "cursor-pointer" : "cursor-default"} transition-transform ${interactive ? "hover:scale-110" : ""}`}
+        >
+          <Star
+            size={size}
+            className={
+              star <= displayRating
+                ? "fill-amber-400 text-amber-400"
+                : "fill-gray-200 text-gray-300 dark:fill-gray-600 dark:text-gray-600"
+            }
+          />
+        </button>
+      ))}
+    </div>
+  );
+}
 
 // ============================================================
 // LOGIN VIEW
@@ -247,7 +276,6 @@ function LoginView() {
         toast.error("Invalid credentials. Please try again.");
         return;
       }
-      // Fetch user data
       const res = await fetch(`/api/user?email=${encodeURIComponent(email)}`);
       if (res.ok) {
         const userData = await res.json();
@@ -418,13 +446,9 @@ function Sidebar() {
       </AnimatePresence>
 
       {/* Sidebar */}
-      <motion.aside
-        initial={false}
-        animate={{
-          x: sidebarOpen ? 0 : (typeof window !== "undefined" && window.innerWidth >= 1024 ? 0 : -280),
-        }}
+      <aside
         className={`
-          fixed lg:static top-0 left-0 z-50 h-full w-64 
+          fixed lg:static top-0 left-0 z-50 h-full w-64
           bg-white dark:bg-slate-900 border-r border-emerald-200/50 dark:border-emerald-800/50
           flex flex-col shadow-lg lg:shadow-none
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
@@ -485,7 +509,7 @@ function Sidebar() {
             </div>
           </div>
         </div>
-      </motion.aside>
+      </aside>
     </>
   );
 }
@@ -573,7 +597,7 @@ function Header() {
 
           {/* Notifications */}
           <Button variant="ghost" size="icon" onClick={handleNotifClick} className="relative">
-            <Bell className={`h-4 w-4 ${bellAnimating ? "bell-shake" : ""}`} />
+            <Bell className={`h-4 w-4 ${bellAnimating ? "animate-bounce" : ""}`} />
             {unreadCount > 0 && (
               <motion.span
                 initial={{ scale: 0 }}
@@ -605,10 +629,16 @@ function Header() {
 }
 
 // ============================================================
-// EMPLOYEE CARD
+// EMPLOYEE ROW (for Dashboard table)
 // ============================================================
 
-function EmployeeCard({ employee, onAttendanceChange }: { employee: Employee; onAttendanceChange: () => void }) {
+function EmployeeRow({
+  employee,
+  onAttendanceChange,
+}: {
+  employee: Employee;
+  onAttendanceChange: () => void;
+}) {
   const { setView, setSelectedEmployee, user } = useAppStore();
 
   const getAttendanceForDay = (daysAgo: number): Attendance | undefined => {
@@ -616,12 +646,11 @@ function EmployeeCard({ employee, onAttendanceChange }: { employee: Employee; on
     return employee.attendances?.find((a) => a.date === dateStr);
   };
 
-  const handleBadgeClick = async (daysAgo: number, e: React.MouseEvent) => {
+  const handleAttendanceClick = async (daysAgo: number, e: React.MouseEvent) => {
     e.stopPropagation();
     const current = getAttendanceForDay(daysAgo);
     const currentStatus = current?.status || "present";
-    const nextIndex = (ATTENDANCE_CYCLE.indexOf(currentStatus as typeof ATTENDANCE_CYCLE[number]) + 1) % ATTENDANCE_CYCLE.length;
-    const nextStatus = ATTENDANCE_CYCLE[nextIndex];
+    const nextStatus = currentStatus === "present" ? "absent" : "present";
     const dateStr = getDateStr(daysAgo);
 
     try {
@@ -642,81 +671,103 @@ function EmployeeCard({ employee, onAttendanceChange }: { employee: Employee; on
   };
 
   return (
-    <motion.div
-      whileHover={{ y: -4, boxShadow: "0 12px 24px -8px rgba(0,0,0,0.12)" }}
-      whileTap={{ scale: 0.98 }}
-      onClick={() => {
-        setSelectedEmployee(employee.id);
-        setView("employee-detail");
-      }}
-      className="cursor-pointer"
+    <motion.tr
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="border-b border-emerald-100 dark:border-emerald-900/30 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-colors"
     >
-      <Card className="h-full overflow-hidden border-emerald-200/30 dark:border-emerald-800/30 hover:border-emerald-400/50 dark:hover:border-emerald-600/50 transition-colors">
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            <Avatar className="h-12 w-12 bg-gradient-to-br from-emerald-400 to-teal-500 flex-shrink-0">
-              <AvatarFallback className="bg-transparent text-white font-bold">
-                {getInitials(employee.fullName)}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-sm truncate">{employee.fullName}</h3>
-              <p className="text-xs text-muted-foreground truncate">{employee.position}</p>
-              <div className="flex items-center gap-1 mt-1">
-                <Building2 className="h-3 w-3 text-emerald-500" />
-                <span className="text-xs text-muted-foreground">{employee.department}</span>
-              </div>
-            </div>
-          </div>
+      {/* Photo */}
+      <td className="px-4 py-3">
+        <Avatar className="h-10 w-10 bg-gradient-to-br from-emerald-400 to-teal-500">
+          {employee.photoUrl && (
+            <AvatarImage src={employee.photoUrl} alt={employee.fullName} />
+          )}
+          <AvatarFallback className="bg-transparent text-white text-xs font-bold">
+            {getInitials(employee.fullName)}
+          </AvatarFallback>
+        </Avatar>
+      </td>
 
-          {/* Attendance badges */}
-          <div className="flex gap-2 mt-3">
-            {[0, 1, 2].map((daysAgo) => {
-              const att = getAttendanceForDay(daysAgo);
-              const status = att?.status || "present";
-              return (
-                <button
-                  key={daysAgo}
-                  onClick={(e) => handleBadgeClick(daysAgo, e)}
-                  className="flex-1 text-center"
-                  title={`${getDayLabel(daysAgo)}: ${status}`}
+      {/* Name & Rating */}
+      <td className="px-4 py-3">
+        <p className="font-semibold text-sm truncate max-w-[180px]">{employee.fullName}</p>
+        <StarRating rating={employee.rating} size={14} />
+      </td>
+
+      {/* 3-day attendance */}
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-3">
+          {[0, 1, 2].map((daysAgo) => {
+            const att = getAttendanceForDay(daysAgo);
+            const status = att?.status || "present";
+            const isPresent = status === "present";
+            return (
+              <button
+                key={daysAgo}
+                onClick={(e) => handleAttendanceClick(daysAgo, e)}
+                className="flex flex-col items-center gap-1 group"
+                title={`${getDayLabel(daysAgo)}: ${status} (click to toggle)`}
+              >
+                <span className="text-[10px] text-muted-foreground group-hover:text-foreground transition-colors">
+                  {getDayLabel(daysAgo)}
+                </span>
+                <span
+                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer hover:scale-110 ${
+                    isPresent
+                      ? "bg-emerald-500 text-white"
+                      : "bg-red-500 text-white"
+                  }`}
                 >
-                  <p className="text-[10px] text-muted-foreground mb-0.5">
-                    {getDayLabel(daysAgo)}
-                  </p>
-                  <Badge
-                    className={`${ATTENDANCE_COLORS[status] || "bg-gray-400 text-white"} text-[10px] px-2 py-0.5 cursor-pointer hover:opacity-90 transition-opacity`}
-                  >
-                    {status === "present" ? "✓" : status === "absent" ? "✗" : status === "late" ? "⏰" : "½"}
-                  </Badge>
-                </button>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-    </motion.div>
+                  {isPresent ? (
+                    <CheckCircle2 className="h-4 w-4" />
+                  ) : (
+                    <XCircle className="h-4 w-4" />
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </td>
+
+      {/* Position */}
+      <td className="px-4 py-3">
+        <span className="text-sm text-muted-foreground truncate block max-w-[150px]">
+          {employee.position || "—"}
+        </span>
+      </td>
+
+      {/* Action */}
+      <td className="px-4 py-3 text-right">
+        <Button
+          size="sm"
+          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+          onClick={() => {
+            setSelectedEmployee(employee.id);
+            setView("employee-detail");
+          }}
+        >
+          <Eye className="h-3.5 w-3.5 mr-1" />
+          View
+        </Button>
+      </td>
+    </motion.tr>
   );
 }
 
 // ============================================================
-// DASHBOARD VIEW
+// DASHBOARD VIEW — ROW-BASED LAYOUT
 // ============================================================
 
 function DashboardView() {
   const { searchQuery, user, setView, setSelectedEmployee } = useAppStore();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
-  const [departmentFilter, setDepartmentFilter] = useState("");
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [deleteEmpId, setDeleteEmpId] = useState("");
-  const [deleteReason, setDeleteReason] = useState("");
 
   const fetchEmployees = useCallback(async () => {
     try {
       const params = new URLSearchParams();
       if (searchQuery) params.set("search", searchQuery);
-      if (departmentFilter) params.set("department", departmentFilter);
       params.set("status", "active");
       const res = await fetch(`/api/employees?${params}`);
       if (res.ok) {
@@ -728,41 +779,22 @@ function DashboardView() {
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, departmentFilter]);
+  }, [searchQuery]);
 
   useEffect(() => {
     fetchEmployees();
   }, [fetchEmployees]);
 
-  const handleDeleteRequest = async () => {
-    if (!deleteEmpId) return;
-    const emp = employees.find((e) => e.id === deleteEmpId);
-    if (!emp) return;
-    try {
-      await fetch("/api/delete-requests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          employeeId: emp.id,
-          employeeName: emp.fullName,
-          requestedBy: user?.id,
-          reason: deleteReason,
-        }),
-      });
-      toast.success("Delete request submitted for approval");
-      setShowDeleteDialog(false);
-      setDeleteReason("");
-    } catch {
-      toast.error("Failed to submit delete request");
-    }
-  };
-
   // Stats
-  const totalActive = employees.length;
-  const deptCounts: Record<string, number> = {};
-  employees.forEach((e) => {
-    if (e.department) deptCounts[e.department] = (deptCounts[e.department] || 0) + 1;
-  });
+  const todayStr = getDateStr(0);
+  const presentToday = employees.filter((e) => {
+    const todayAtt = e.attendances?.find((a) => a.date === todayStr);
+    return todayAtt?.status === "present" || !todayAtt;
+  }).length;
+  const absentToday = employees.filter((e) => {
+    const todayAtt = e.attendances?.find((a) => a.date === todayStr);
+    return todayAtt?.status === "absent";
+  }).length;
 
   return (
     <div className="space-y-6">
@@ -787,16 +819,11 @@ function DashboardView() {
       </div>
 
       {/* Stats cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {[
-          { label: "Total Employees", value: totalActive, icon: Users, bgClass: "bg-emerald-100 dark:bg-emerald-900/30", iconClass: "text-emerald-600 dark:text-emerald-400" },
-          { label: "Departments", value: Object.keys(deptCounts).length, icon: Building2, bgClass: "bg-teal-100 dark:bg-teal-900/30", iconClass: "text-teal-600 dark:text-teal-400" },
-          { label: "Active Today", value: totalActive, icon: CheckCircle2, bgClass: "bg-green-100 dark:bg-green-900/30", iconClass: "text-green-600 dark:text-green-400" },
-          { label: "New This Month", value: employees.filter((e) => {
-            const d = new Date(e.createdAt);
-            const now = new Date();
-            return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-          }).length, icon: Award, bgClass: "bg-amber-100 dark:bg-amber-900/30", iconClass: "text-amber-600 dark:text-amber-400" },
+          { label: "Total Employees", value: employees.length, icon: Users, bgClass: "bg-emerald-100 dark:bg-emerald-900/30", iconClass: "text-emerald-600 dark:text-emerald-400" },
+          { label: "Present Today", value: presentToday, icon: CheckCircle2, bgClass: "bg-green-100 dark:bg-green-900/30", iconClass: "text-green-600 dark:text-green-400" },
+          { label: "Absent Today", value: absentToday, icon: XCircle, bgClass: "bg-red-100 dark:bg-red-900/30", iconClass: "text-red-600 dark:text-red-400" },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}
@@ -821,50 +848,19 @@ function DashboardView() {
         ))}
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex items-center gap-2 flex-1">
-          <Filter className="h-4 w-4 text-muted-foreground" />
-          <Select value={departmentFilter || "all"} onValueChange={(val) => setDepartmentFilter(val === "all" ? "" : val)}>
-            <SelectTrigger className="w-full sm:w-48">
-              <SelectValue placeholder="All Departments" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Departments</SelectItem>
-              {DEPARTMENTS.map((d) => (
-                <SelectItem key={d} value={d}>
-                  {d}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      {/* Refresh */}
+      <div className="flex justify-end">
         <Button variant="outline" size="sm" onClick={fetchEmployees}>
           <RefreshCw className="h-3 w-3 mr-1" />
           Refresh
         </Button>
       </div>
 
-      {/* Employee grid */}
+      {/* Employee table */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="space-y-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Card key={i} className="border-emerald-200/30 dark:border-emerald-800/30">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <Skeleton className="h-12 w-12 rounded-full" />
-                  <div className="space-y-2 flex-1">
-                    <Skeleton className="h-4 w-3/4" />
-                    <Skeleton className="h-3 w-1/2" />
-                  </div>
-                </div>
-                <div className="flex gap-2 mt-3">
-                  <Skeleton className="h-6 w-16" />
-                  <Skeleton className="h-6 w-16" />
-                  <Skeleton className="h-6 w-16" />
-                </div>
-              </CardContent>
-            </Card>
+            <Skeleton key={i} className="h-16 w-full rounded-lg" />
           ))}
         </div>
       ) : employees.length === 0 ? (
@@ -876,63 +872,39 @@ function DashboardView() {
           <Users className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
           <h3 className="text-lg font-medium text-muted-foreground">No employees found</h3>
           <p className="text-sm text-muted-foreground/70 mt-1">
-            {searchQuery || departmentFilter
-              ? "Try adjusting your search or filters"
+            {searchQuery
+              ? "Try adjusting your search"
               : "Click 'Add Employee' to get started"}
           </p>
         </motion.div>
       ) : (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
-        >
-          <AnimatePresence>
-            {employees.map((emp, i) => (
-              <motion.div
-                key={emp.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                transition={{ delay: i * 0.05 }}
-              >
-                <EmployeeCard employee={emp} onAttendanceChange={fetchEmployees} />
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </motion.div>
-      )}
-
-      {/* Delete Request Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Request Employee Deletion</DialogTitle>
-            <DialogDescription>
-              This will send a deletion request to the super admin for approval.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Reason</Label>
-              <Textarea
-                value={deleteReason}
-                onChange={(e) => setDeleteReason(e.target.value)}
-                placeholder="Provide a reason for deletion..."
-                className="mt-1"
-              />
-            </div>
+        <Card className="border-emerald-200/30 dark:border-emerald-800/30 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-emerald-200/50 dark:border-emerald-800/50 bg-emerald-50/50 dark:bg-emerald-950/20">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Photo</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Name & Rating</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Attendance (3 days)</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Position</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <AnimatePresence>
+                  {employees.map((emp) => (
+                    <EmployeeRow
+                      key={emp.id}
+                      employee={emp}
+                      onAttendanceChange={fetchEmployees}
+                    />
+                  ))}
+                </AnimatePresence>
+              </tbody>
+            </table>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleDeleteRequest}>
-              Submit Request
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </Card>
+      )}
     </div>
   );
 }
@@ -942,7 +914,7 @@ function DashboardView() {
 // ============================================================
 
 function EmployeeDetailView() {
-  const { selectedEmployeeId, setView, user } = useAppStore();
+  const { selectedEmployeeId, setView } = useAppStore();
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
   const printRef = useRef<HTMLDivElement>(null);
@@ -1009,18 +981,13 @@ function EmployeeDetailView() {
     );
   }
 
-  const InfoRow = ({ icon: Icon, label, value, encrypted }: { icon: React.ElementType; label: string; value: string | null | undefined; encrypted?: boolean }) => (
-    <div className="flex items-start gap-3 py-2">
-      <Icon className="h-4 w-4 text-emerald-500 mt-0.5 flex-shrink-0" />
-      <div className="flex-1">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-sm font-medium flex items-center gap-1">
-          {value || "—"}
-          {encrypted && <Lock className="h-3 w-3 text-amber-500" />}
-        </p>
-      </div>
-    </div>
-  );
+  const statusBadge = (status: string | null) => {
+    if (!status || status === "N/A") return <Badge variant="outline" className="text-xs">N/A</Badge>;
+    if (status === "Valid") return <Badge className="bg-emerald-500 text-white text-xs">Valid</Badge>;
+    if (status === "Expired") return <Badge className="bg-red-500 text-white text-xs">Expired</Badge>;
+    if (status === "Pending") return <Badge className="bg-amber-500 text-white text-xs">Pending</Badge>;
+    return <Badge variant="outline" className="text-xs">{status}</Badge>;
+  };
 
   return (
     <div className="space-y-4">
@@ -1050,194 +1017,133 @@ function EmployeeDetailView() {
       </div>
 
       {/* CV Content */}
-      <div ref={printRef} className="bg-white dark:bg-slate-900 rounded-xl shadow-lg overflow-hidden">
+      <div ref={printRef} className="bg-white rounded-xl shadow-lg overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white p-6">
-          <div className="flex items-center gap-6">
-            <Avatar className="h-24 w-24 bg-white/20 border-4 border-white/30">
-              <AvatarFallback className="bg-transparent text-white text-2xl font-bold">
+          <div className="flex items-center justify-between">
+            {/* Left: Logo */}
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
+                <Shield className="w-7 h-7 text-white" />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold">ASM</h1>
+                <p className="text-xs text-emerald-100">Arabian Shield Manpower</p>
+              </div>
+            </div>
+
+            {/* Center: Title */}
+            <div className="text-center">
+              <h2 className="text-xl font-bold tracking-wider uppercase">WORKERS PROFILE</h2>
+            </div>
+
+            {/* Right: Photo */}
+            <Avatar className="h-[120px] w-[120px] rounded-lg bg-white/20 border-4 border-white/30">
+              {employee.photoUrl && (
+                <AvatarImage src={employee.photoUrl} alt={employee.fullName} className="object-cover" />
+              )}
+              <AvatarFallback className="bg-transparent text-white text-3xl font-bold">
                 {getInitials(employee.fullName)}
               </AvatarFallback>
             </Avatar>
-            <div className="flex-1">
-              <h2 className="text-2xl font-bold">{employee.fullName}</h2>
-              <p className="text-emerald-100 text-lg">{employee.position}</p>
-              <div className="flex flex-wrap gap-3 mt-2 text-sm text-emerald-100">
-                <span className="flex items-center gap-1">
-                  <Building2 className="h-3.5 w-3.5" /> {employee.department}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Globe className="h-3.5 w-3.5" /> {employee.nationality}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Award className="h-3.5 w-3.5" /> ID: {employee.employeeId}
-                </span>
-              </div>
-            </div>
-          </div>
-          {/* Company branding */}
-          <div className="mt-4 pt-3 border-t border-white/20 text-xs text-emerald-100">
-            Arabian Shield Manpower — Confidential Employee Profile
           </div>
         </div>
 
         {/* Body sections */}
-        <div className="p-6 space-y-6">
-          {/* Two column layout */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Personal Info */}
-            <Card className="border-emerald-200/30 dark:border-emerald-800/30">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <User className="h-4 w-4 text-emerald-500" />
-                  Personal Information
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-0">
-                <InfoRow icon={CalendarDays} label="Date of Birth" value={formatDate(employee.dateOfBirth)} />
-                <InfoRow icon={Globe} label="Nationality" value={employee.nationality} />
-                <InfoRow icon={Lock} label="Passport Number" value={employee.passportNumber} encrypted />
-                <InfoRow icon={Lock} label="ID Number" value={employee.idNumber} encrypted />
-                <InfoRow icon={Home} label="Address" value={employee.address} />
-              </CardContent>
-            </Card>
-
-            {/* Contact Info */}
-            <Card className="border-emerald-200/30 dark:border-emerald-800/30">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Phone className="h-4 w-4 text-emerald-500" />
-                  Contact Information
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-0">
-                <InfoRow icon={Phone} label="Phone" value={employee.phone} />
-                <InfoRow icon={Mail} label="Email" value={employee.email} />
-                <InfoRow icon={HeartPulse} label="Emergency Contact" value={employee.emergencyContact} />
-              </CardContent>
-            </Card>
-
-            {/* Employment Info */}
-            <Card className="border-emerald-200/30 dark:border-emerald-800/30">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Briefcase className="h-4 w-4 text-emerald-500" />
-                  Employment Details
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-0">
-                <InfoRow icon={Award} label="Employee ID" value={employee.employeeId} />
-                <InfoRow icon={Briefcase} label="Position" value={employee.position} />
-                <InfoRow icon={Building2} label="Department" value={employee.department} />
-                <InfoRow icon={CalendarDays} label="Join Date" value={formatDate(employee.joinDate)} />
-                <InfoRow icon={Lock} label="Salary" value={employee.salary ? `SAR ${employee.salary}` : null} encrypted />
-              </CardContent>
-            </Card>
-
-            {/* Skills & Languages */}
-            <Card className="border-emerald-200/30 dark:border-emerald-800/30">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Award className="h-4 w-4 text-emerald-500" />
-                  Skills & Qualifications
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {employee.skills && (
-                  <div className="mb-3">
-                    <p className="text-xs text-muted-foreground mb-1.5">Skills</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {employee.skills.split(",").map((skill, i) => (
-                        <Badge key={i} variant="secondary" className="text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
-                          {skill.trim()}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {employee.languages && (
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1.5">Languages</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {employee.languages.split(",").map((lang, i) => (
-                        <Badge key={i} variant="outline" className="text-xs">
-                          <Languages className="h-3 w-3 mr-1" />
-                          {lang.trim()}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+        <div className="p-6 space-y-6 text-gray-900">
+          {/* Section 1: Personal Details */}
+          <div>
+            <h3 className="text-base font-bold flex items-center gap-2 mb-3 text-emerald-700">
+              <span className="text-emerald-600">&#10003;</span>
+              PERSONAL DETAILS
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+              <div className="flex gap-2">
+                <span className="font-semibold text-gray-500 min-w-[24px]">1.</span>
+                <span className="font-semibold min-w-[110px]">Name :</span>
+                <span>{employee.fullName}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-semibold text-gray-500 min-w-[24px]">2.</span>
+                <span className="font-semibold min-w-[110px]">Com. ID :</span>
+                <span>{employee.employeeId}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-semibold text-gray-500 min-w-[24px]">3.</span>
+                <span className="font-semibold min-w-[110px] flex items-center gap-1">
+                  Passport No :
+                  <Lock className="h-3 w-3 text-amber-500" />
+                </span>
+                <span>{employee.passportNumber || "—"}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-semibold text-gray-500 min-w-[24px]">4.</span>
+                <span className="font-semibold min-w-[110px] flex items-center gap-1">
+                  ID. NO :
+                  <Lock className="h-3 w-3 text-amber-500" />
+                </span>
+                <span>{employee.idNumber || "—"}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-semibold text-gray-500 min-w-[24px]">5.</span>
+                <span className="font-semibold min-w-[110px]">Joining Date :</span>
+                <span>{formatDateCV(employee.joinDate)}</span>
+              </div>
+            </div>
           </div>
 
-          {/* Full-width sections */}
-          {employee.experience && (
-            <Card className="border-emerald-200/30 dark:border-emerald-800/30">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Briefcase className="h-4 w-4 text-emerald-500" />
-                  Experience
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm">{employee.experience}</p>
-              </CardContent>
-            </Card>
-          )}
+          <Separator />
 
-          {employee.education && (
-            <Card className="border-emerald-200/30 dark:border-emerald-800/30">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <GraduationCap className="h-4 w-4 text-emerald-500" />
-                  Education
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm">{employee.education}</p>
-              </CardContent>
-            </Card>
-          )}
+          {/* Section 2: Professional Details */}
+          <div>
+            <h3 className="text-base font-bold flex items-center gap-2 mb-3 text-emerald-700">
+              <span className="text-emerald-600">&#10003;</span>
+              PROFESSIONAL DETAILS
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+              <div className="flex gap-2">
+                <span className="font-semibold text-gray-500 min-w-[24px]">6.</span>
+                <span className="font-semibold min-w-[110px]">Com. Name :</span>
+                <span>{employee.companyName || "—"}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="font-semibold text-gray-500 min-w-[24px]">7.</span>
+                <span className="font-semibold min-w-[110px]">Position :</span>
+                <span>{employee.position || "—"}</span>
+              </div>
+              <div className="flex gap-2 items-center">
+                <span className="font-semibold text-gray-500 min-w-[24px]">8.</span>
+                <span className="font-semibold min-w-[110px]">Passport Status :</span>
+                <span>{statusBadge(employee.passportStatus)}</span>
+              </div>
+              <div className="flex gap-2 items-center">
+                <span className="font-semibold text-gray-500 min-w-[24px]">9.</span>
+                <span className="font-semibold min-w-[110px]">ID. Status :</span>
+                <span>{statusBadge(employee.idStatus)}</span>
+              </div>
+            </div>
+          </div>
 
-          {employee.notes && (
-            <Card className="border-emerald-200/30 dark:border-emerald-800/30">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-emerald-500" />
-                  Notes
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm">{employee.notes}</p>
-              </CardContent>
-            </Card>
-          )}
+          <Separator />
 
-          {/* Attendance History */}
-          {employee.attendances && employee.attendances.length > 0 && (
-            <Card className="border-emerald-200/30 dark:border-emerald-800/30">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <CalendarDays className="h-4 w-4 text-emerald-500" />
-                  Recent Attendance
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  {employee.attendances.slice(0, 14).map((att) => (
-                    <div key={att.id} className="text-center">
-                      <p className="text-[10px] text-muted-foreground">{att.date}</p>
-                      <Badge className={`${ATTENDANCE_COLORS[att.status] || ""} text-[10px]`}>
-                        {att.status}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          {/* Section 3: Assessment Grade */}
+          <div>
+            <h3 className="text-base font-bold flex items-center gap-2 mb-3 text-emerald-700">
+              <span className="text-emerald-600">&#10003;</span>
+              ASSESSMENT GRADE
+            </h3>
+            <div className="flex items-center gap-3">
+              <StarRating rating={employee.rating} size={20} />
+              <span className="text-sm font-semibold text-gray-600">{employee.rating}/5</span>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Footer */}
+          <div className="text-center text-xs text-gray-400 pt-2">
+            Arabian Shield Manpower — Confidential Workers Profile
+          </div>
         </div>
       </div>
     </div>
@@ -1254,7 +1160,7 @@ function EmployeeFormView() {
   const [saving, setSaving] = useState(false);
   const isEdit = !!selectedEmployeeId;
 
-  const [form, setForm] = useState({
+  const [formData, setFormData] = useState({
     employeeId: "",
     fullName: "",
     nationality: "",
@@ -1264,16 +1170,14 @@ function EmployeeFormView() {
     phone: "",
     email: "",
     position: "",
-    department: "",
     joinDate: "",
-    salary: "",
-    skills: "",
-    experience: "",
-    education: "",
-    languages: "",
+    companyName: "",
+    passportStatus: "",
+    idStatus: "",
+    rating: 3,
     emergencyContact: "",
     address: "",
-    notes: "",
+    photoUrl: "" as string | null,
   });
 
   useEffect(() => {
@@ -1282,7 +1186,7 @@ function EmployeeFormView() {
       fetch(`/api/employees/${selectedEmployeeId}`)
         .then((r) => r.json())
         .then((data) => {
-          setForm({
+          setFormData({
             employeeId: data.employeeId || "",
             fullName: data.fullName || "",
             nationality: data.nationality || "",
@@ -1292,16 +1196,14 @@ function EmployeeFormView() {
             phone: data.phone || "",
             email: data.email || "",
             position: data.position || "",
-            department: data.department || "",
             joinDate: data.joinDate || "",
-            salary: data.salary || "",
-            skills: data.skills || "",
-            experience: data.experience || "",
-            education: data.education || "",
-            languages: data.languages || "",
+            companyName: data.companyName || "",
+            passportStatus: data.passportStatus || "",
+            idStatus: data.idStatus || "",
+            rating: data.rating || 3,
             emergencyContact: data.emergencyContact || "",
             address: data.address || "",
-            notes: data.notes || "",
+            photoUrl: data.photoUrl || null,
           });
           setLoading(false);
         })
@@ -1310,26 +1212,42 @@ function EmployeeFormView() {
           setLoading(false);
         });
     } else {
-      // Auto-generate employee ID
-      setForm((prev) => ({ ...prev, employeeId: `EMP-${Date.now().toString().slice(-6)}` }));
+      setFormData((prev) => ({ ...prev, employeeId: `EMP-${Date.now().toString().slice(-6)}` }));
     }
   }, [selectedEmployeeId]);
 
-  const updateField = (field: string, value: string) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
+  const updateField = (field: string, value: string | number | null) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fileFormData = new FormData();
+    fileFormData.append("file", file);
+    try {
+      const res = await fetch("/api/upload", { method: "POST", body: fileFormData });
+      if (res.ok) {
+        const data = await res.json();
+        setFormData((prev) => ({ ...prev, photoUrl: data.url }));
+        toast.success("Image uploaded");
+      }
+    } catch {
+      toast.error("Failed to upload image");
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.employeeId || !form.fullName) {
+    if (!formData.employeeId || !formData.fullName) {
       toast.error("Employee ID and Full Name are required");
       return;
     }
     setSaving(true);
     try {
-      const url = isEdit ? "/api/employees" : "/api/employees";
+      const url = "/api/employees";
       const method = isEdit ? "PUT" : "POST";
-      const body = isEdit ? { id: selectedEmployeeId, ...form } : form;
+      const body = isEdit ? { id: selectedEmployeeId, ...formData } : formData;
 
       const res = await fetch(url, {
         method,
@@ -1362,37 +1280,6 @@ function EmployeeFormView() {
     );
   }
 
-  const fields: { key: string; label: string; icon: React.ElementType; encrypted?: boolean; type?: string; }[][] = [
-    [
-      { key: "employeeId", label: "Employee ID", icon: Award },
-      { key: "fullName", label: "Full Name", icon: User },
-    ],
-    [
-      { key: "nationality", label: "Nationality", icon: Globe },
-      { key: "dateOfBirth", label: "Date of Birth", icon: CalendarDays, type: "date" },
-    ],
-    [
-      { key: "passportNumber", label: "Passport Number", icon: Lock, encrypted: true },
-      { key: "idNumber", label: "ID Number", icon: Lock, encrypted: true },
-    ],
-    [
-      { key: "phone", label: "Phone", icon: Phone },
-      { key: "email", label: "Email", icon: Mail, type: "email" },
-    ],
-    [
-      { key: "position", label: "Position", icon: Briefcase },
-      { key: "department", label: "Department", icon: Building2 },
-    ],
-    [
-      { key: "joinDate", label: "Join Date", icon: CalendarDays, type: "date" },
-      { key: "salary", label: "Salary (SAR)", icon: Lock, encrypted: true },
-    ],
-    [
-      { key: "emergencyContact", label: "Emergency Contact", icon: HeartPulse },
-      { key: "address", label: "Address", icon: Home },
-    ],
-  ];
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -1410,127 +1297,291 @@ function EmployeeFormView() {
       <form onSubmit={handleSubmit}>
         <Card className="border-emerald-200/30 dark:border-emerald-800/30">
           <CardContent className="p-6 space-y-6">
-            {/* Two-column field rows */}
-            {fields.map((row, rowIdx) => (
-              <div key={rowIdx} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {row.map((field) => (
-                  <div key={field.key} className="space-y-1.5">
-                    <Label className="flex items-center gap-1.5 text-xs">
-                      <field.icon className="h-3.5 w-3.5 text-emerald-500" />
-                      {field.label}
-                      {field.encrypted && <Lock className="h-3 w-3 text-amber-500" />}
-                    </Label>
-                    {field.key === "department" ? (
-                      <Select
-                        value={form[field.key]}
-                        onValueChange={(val) => updateField(field.key, val)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select department" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {DEPARTMENTS.map((d) => (
-                            <SelectItem key={d} value={d}>
-                              {d}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : field.key === "nationality" ? (
-                      <Select
-                        value={form[field.key]}
-                        onValueChange={(val) => updateField(field.key, val)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select nationality" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {NATIONALITIES.map((n) => (
-                            <SelectItem key={n} value={n}>
-                              {n}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Input
-                        type={field.type || "text"}
-                        value={form[field.key as keyof typeof form]}
-                        onChange={(e) => updateField(field.key, e.target.value)}
-                        placeholder={field.label}
-                      />
+            {/* Photo upload */}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold">Photo</Label>
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <Avatar className="h-24 w-24 bg-gradient-to-br from-emerald-400 to-teal-500">
+                    {formData.photoUrl && (
+                      <AvatarImage src={formData.photoUrl} alt="Preview" className="object-cover" />
                     )}
-                  </div>
-                ))}
+                    <AvatarFallback className="bg-transparent text-white text-xl font-bold">
+                      {formData.fullName ? getInitials(formData.fullName) : "?"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <label className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-full opacity-0 hover:opacity-100 transition-opacity cursor-pointer">
+                    <Camera className="h-6 w-6 text-white" />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageSelect}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Click the avatar to upload a photo
+                </div>
               </div>
-            ))}
-
-            {/* Skills */}
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5 text-xs">
-                <Award className="h-3.5 w-3.5 text-emerald-500" />
-                Skills (comma-separated)
-              </Label>
-              <Textarea
-                value={form.skills}
-                onChange={(e) => updateField("skills", e.target.value)}
-                placeholder="e.g. Project Management, Leadership, Communication"
-                rows={2}
-              />
             </div>
 
-            {/* Experience */}
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5 text-xs">
-                <Briefcase className="h-3.5 w-3.5 text-emerald-500" />
-                Experience
-              </Label>
-              <Textarea
-                value={form.experience}
-                onChange={(e) => updateField("experience", e.target.value)}
-                placeholder="e.g. 10 years in structural engineering"
-                rows={2}
-              />
-            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Employee ID */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <Award className="h-3.5 w-3.5 text-emerald-500" />
+                  Employee ID (Com. ID)
+                </Label>
+                <Input
+                  value={formData.employeeId}
+                  onChange={(e) => updateField("employeeId", e.target.value)}
+                  placeholder="e.g. EMP-001234"
+                  className="w-full"
+                />
+              </div>
 
-            {/* Education */}
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5 text-xs">
-                <GraduationCap className="h-3.5 w-3.5 text-emerald-500" />
-                Education
-              </Label>
-              <Input
-                value={form.education}
-                onChange={(e) => updateField("education", e.target.value)}
-                placeholder="e.g. BSc Civil Engineering, KFUPM"
-              />
-            </div>
+              {/* Full Name */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <User className="h-3.5 w-3.5 text-emerald-500" />
+                  Full Name
+                </Label>
+                <Input
+                  value={formData.fullName}
+                  onChange={(e) => updateField("fullName", e.target.value)}
+                  placeholder="Full Name"
+                  className="w-full"
+                />
+              </div>
 
-            {/* Languages */}
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5 text-xs">
-                <Languages className="h-3.5 w-3.5 text-emerald-500" />
-                Languages (comma-separated)
-              </Label>
-              <Input
-                value={form.languages}
-                onChange={(e) => updateField("languages", e.target.value)}
-                placeholder="e.g. Arabic, English"
-              />
-            </div>
+              {/* Nationality */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <Globe className="h-3.5 w-3.5 text-emerald-500" />
+                  Nationality
+                </Label>
+                <Select
+                  value={formData.nationality || "_none"}
+                  onValueChange={(val) => updateField("nationality", val === "_none" ? "" : val)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select nationality" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">— Select —</SelectItem>
+                    {NATIONALITIES.map((n) => (
+                      <SelectItem key={n} value={n}>{n}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            {/* Notes */}
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5 text-xs">
-                <FileText className="h-3.5 w-3.5 text-emerald-500" />
-                Notes
-              </Label>
-              <Textarea
-                value={form.notes}
-                onChange={(e) => updateField("notes", e.target.value)}
-                placeholder="Additional notes..."
-                rows={3}
-              />
+              {/* Date of Birth */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <CalendarDays className="h-3.5 w-3.5 text-emerald-500" />
+                  Date of Birth
+                </Label>
+                <Input
+                  type="date"
+                  value={formData.dateOfBirth}
+                  onChange={(e) => updateField("dateOfBirth", e.target.value)}
+                  className="w-full"
+                />
+              </div>
+
+              {/* Passport Number */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <Lock className="h-3.5 w-3.5 text-amber-500" />
+                  Passport Number
+                  <Lock className="h-3 w-3 text-amber-500" />
+                </Label>
+                <Input
+                  value={formData.passportNumber}
+                  onChange={(e) => updateField("passportNumber", e.target.value)}
+                  placeholder="Passport Number"
+                  className="w-full"
+                />
+              </div>
+
+              {/* ID Number */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <Lock className="h-3.5 w-3.5 text-amber-500" />
+                  ID Number
+                  <Lock className="h-3 w-3 text-amber-500" />
+                </Label>
+                <Input
+                  value={formData.idNumber}
+                  onChange={(e) => updateField("idNumber", e.target.value)}
+                  placeholder="ID Number"
+                  className="w-full"
+                />
+              </div>
+
+              {/* Phone */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <Phone className="h-3.5 w-3.5 text-emerald-500" />
+                  Phone
+                </Label>
+                <Input
+                  value={formData.phone}
+                  onChange={(e) => updateField("phone", e.target.value)}
+                  placeholder="Phone"
+                  className="w-full"
+                />
+              </div>
+
+              {/* Email */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <Mail className="h-3.5 w-3.5 text-emerald-500" />
+                  Email
+                </Label>
+                <Input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => updateField("email", e.target.value)}
+                  placeholder="Email"
+                  className="w-full"
+                />
+              </div>
+
+              {/* Position */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <Briefcase className="h-3.5 w-3.5 text-emerald-500" />
+                  Position
+                </Label>
+                <Input
+                  value={formData.position}
+                  onChange={(e) => updateField("position", e.target.value)}
+                  placeholder="Position"
+                  className="w-full"
+                />
+              </div>
+
+              {/* Join Date */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <CalendarDays className="h-3.5 w-3.5 text-emerald-500" />
+                  Join Date
+                </Label>
+                <Input
+                  type="date"
+                  value={formData.joinDate}
+                  onChange={(e) => updateField("joinDate", e.target.value)}
+                  className="w-full"
+                />
+              </div>
+
+              {/* Company Name */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <Building2 className="h-3.5 w-3.5 text-emerald-500" />
+                  Company Name (Com. Name)
+                </Label>
+                <Input
+                  value={formData.companyName}
+                  onChange={(e) => updateField("companyName", e.target.value)}
+                  placeholder="Company Name"
+                  className="w-full"
+                />
+              </div>
+
+              {/* Passport Status */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <Globe className="h-3.5 w-3.5 text-emerald-500" />
+                  Passport Status
+                </Label>
+                <Select
+                  value={formData.passportStatus || "_none"}
+                  onValueChange={(val) => updateField("passportStatus", val === "_none" ? "" : val)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">— Select —</SelectItem>
+                    {STATUS_OPTIONS.map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* ID Status */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <Globe className="h-3.5 w-3.5 text-emerald-500" />
+                  ID Status
+                </Label>
+                <Select
+                  value={formData.idStatus || "_none"}
+                  onValueChange={(val) => updateField("idStatus", val === "_none" ? "" : val)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">— Select —</SelectItem>
+                    {STATUS_OPTIONS.map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Rating — spans full width */}
+              <div className="space-y-1.5 md:col-span-2">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <Star className="h-3.5 w-3.5 text-amber-500" />
+                  Rating
+                </Label>
+                <div className="flex items-center gap-3">
+                  <StarRating
+                    rating={formData.rating}
+                    size={24}
+                    interactive
+                    onChange={(r) => updateField("rating", r)}
+                  />
+                  <span className="text-sm font-semibold text-muted-foreground">
+                    {formData.rating}/5
+                  </span>
+                </div>
+              </div>
+
+              {/* Emergency Contact */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <Phone className="h-3.5 w-3.5 text-emerald-500" />
+                  Emergency Contact
+                </Label>
+                <Input
+                  value={formData.emergencyContact}
+                  onChange={(e) => updateField("emergencyContact", e.target.value)}
+                  placeholder="Emergency Contact"
+                  className="w-full"
+                />
+              </div>
+
+              {/* Address */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <HomeIcon className="h-3.5 w-3.5 text-emerald-500" />
+                  Address
+                </Label>
+                <Input
+                  value={formData.address}
+                  onChange={(e) => updateField("address", e.target.value)}
+                  placeholder="Address"
+                  className="w-full"
+                />
+              </div>
             </div>
 
             {/* Submit */}
@@ -1613,38 +1664,25 @@ function DeleteRequestsView() {
       <div className="text-center py-16">
         <Shield className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
         <h3 className="text-lg font-medium text-muted-foreground">Access Denied</h3>
-        <p className="text-sm text-muted-foreground/70 mt-1">
-          Only super admins can manage delete requests
-        </p>
+        <p className="text-sm text-muted-foreground/70 mt-1">Only super admins can review delete requests</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold">Delete Requests</h2>
-          <p className="text-sm text-muted-foreground">
-            Review and manage employee deletion requests
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {["pending", "approved", "rejected", ""].map((s) => (
-            <Button
-              key={s}
-              variant={statusFilter === s ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                setStatusFilter(s);
-                setLoading(true);
-              }}
-              className={statusFilter === s ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}
-            >
-              {s === "" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
-            </Button>
-          ))}
-        </div>
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold">Delete Requests</h2>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="approved">Approved</SelectItem>
+            <SelectItem value="rejected">Rejected</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {loading ? (
@@ -1654,91 +1692,61 @@ function DeleteRequestsView() {
           ))}
         </div>
       ) : requests.length === 0 ? (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="text-center py-16"
-        >
-          <AlertTriangle className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
-          <h3 className="text-lg font-medium text-muted-foreground">No requests found</h3>
-        </motion.div>
+        <div className="text-center py-16">
+          <Trash2 className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
+          <h3 className="text-lg font-medium text-muted-foreground">No delete requests</h3>
+        </div>
       ) : (
         <div className="space-y-3">
           <AnimatePresence>
-            {requests.map((req, i) => (
+            {requests.map((req) => (
               <motion.div
                 key={req.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                transition={{ delay: i * 0.05 }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, x: -100 }}
               >
                 <Card className="border-emerald-200/30 dark:border-emerald-800/30">
                   <CardContent className="p-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex items-start gap-3">
-                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                          req.status === "pending"
-                            ? "bg-amber-100 dark:bg-amber-900/30"
-                            : req.status === "approved"
-                            ? "bg-emerald-100 dark:bg-emerald-900/30"
-                            : "bg-red-100 dark:bg-red-900/30"
-                        }`}>
-                          {req.status === "pending" ? (
-                            <Clock className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-                          ) : req.status === "approved" ? (
-                            <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-                          ) : (
-                            <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
-                          )}
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-semibold text-sm">{req.employeeName}</h4>
+                          <Badge
+                            className={
+                              req.status === "pending"
+                                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                                : req.status === "approved"
+                                ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                            }
+                          >
+                            {req.status}
+                          </Badge>
                         </div>
-                        <div>
-                          <p className="font-medium text-sm">{req.employeeName}</p>
-                          <p className="text-xs text-muted-foreground">
-                            Requested {formatDateTime(req.createdAt)}
-                          </p>
-                          {req.reason && (
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Reason: {req.reason}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          className={
-                            req.status === "pending"
-                              ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                              : req.status === "approved"
-                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                          }
-                        >
-                          {req.status}
-                        </Badge>
-                        {req.status === "pending" && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:border-emerald-700 dark:hover:bg-emerald-950"
-                              onClick={() => handleAction(req.id, "approved")}
-                            >
-                              <CheckCircle2 className="h-3 w-3 mr-1" />
-                              Approve
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-red-600 border-red-300 hover:bg-red-50 dark:border-red-700 dark:hover:bg-red-950"
-                              onClick={() => handleAction(req.id, "rejected")}
-                            >
-                              <XCircle className="h-3 w-3 mr-1" />
-                              Reject
-                            </Button>
-                          </>
+                        {req.reason && (
+                          <p className="text-xs text-muted-foreground mt-1">Reason: {req.reason}</p>
                         )}
+                        <p className="text-[10px] text-muted-foreground mt-1">{formatDateTime(req.createdAt)}</p>
                       </div>
+                      {req.status === "pending" && (
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleAction(req.id, "approved")}
+                          >
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleAction(req.id, "rejected")}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -1766,7 +1774,7 @@ function NotificationsView() {
       const res = await fetch(`/api/notifications?userId=${user.id}`);
       if (res.ok) {
         const data = await res.json();
-        setNotifications(data);
+        if (Array.isArray(data)) setNotifications(data);
       }
     } catch {
       toast.error("Failed to load notifications");
@@ -1790,43 +1798,44 @@ function NotificationsView() {
         prev.map((n) => (n.id === id ? { ...n, read: true } : n))
       );
     } catch {
-      toast.error("Failed to mark notification");
+      toast.error("Failed to mark as read");
     }
   };
 
-  const markAllRead = async () => {
-    const unread = notifications.filter((n) => !n.read);
-    for (const n of unread) {
-      await markAsRead(n.id);
+  const markAllAsRead = async () => {
+    try {
+      const unread = notifications.filter((n) => !n.read);
+      await Promise.all(
+        unread.map((n) =>
+          fetch("/api/notifications", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: n.id, read: true }),
+          })
+        )
+      );
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      toast.success("All notifications marked as read");
+    } catch {
+      toast.error("Failed to mark all as read");
     }
-    toast.success("All notifications marked as read");
   };
 
-  const typeColors: Record<string, string> = {
-    info: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400",
-    warning: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400",
-    success: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400",
-    danger: "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400",
-  };
-
-  const typeIcons: Record<string, React.ElementType> = {
-    info: Bell,
-    warning: AlertTriangle,
-    success: CheckCircle2,
-    danger: XCircle,
+  const typeIcon = (type: string) => {
+    switch (type) {
+      case "success": return <CheckCircle2 className="h-5 w-5 text-emerald-500" />;
+      case "warning": return <AlertTriangle className="h-5 w-5 text-amber-500" />;
+      case "danger": return <XCircle className="h-5 w-5 text-red-500" />;
+      default: return <Bell className="h-5 w-5 text-blue-500" />;
+    }
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold">Notifications</h2>
-          <p className="text-sm text-muted-foreground">
-            Stay updated on important events
-          </p>
-        </div>
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold">Notifications</h2>
         {notifications.some((n) => !n.read) && (
-          <Button variant="outline" size="sm" onClick={markAllRead}>
+          <Button variant="outline" size="sm" onClick={markAllAsRead}>
             <CheckCircle2 className="h-3 w-3 mr-1" />
             Mark all as read
           </Button>
@@ -1835,68 +1844,57 @@ function NotificationsView() {
 
       {loading ? (
         <div className="space-y-3">
-          {Array.from({ length: 5 }).map((_, i) => (
+          {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-16 w-full rounded-lg" />
           ))}
         </div>
       ) : notifications.length === 0 ? (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="text-center py-16"
-        >
+        <div className="text-center py-16">
           <Bell className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
           <h3 className="text-lg font-medium text-muted-foreground">No notifications</h3>
-          <p className="text-sm text-muted-foreground/70 mt-1">
-            You&apos;re all caught up!
-          </p>
-        </motion.div>
+        </div>
       ) : (
         <div className="space-y-2">
           <AnimatePresence>
-            {notifications.map((notif, i) => {
-              const Icon = typeIcons[notif.type] || Bell;
-              return (
-                <motion.div
-                  key={notif.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, x: -100 }}
-                  transition={{ delay: i * 0.03 }}
+            {notifications.map((notif) => (
+              <motion.div
+                key={notif.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+              >
+                <Card
+                  className={`cursor-pointer transition-colors border-emerald-200/30 dark:border-emerald-800/30 ${
+                    !notif.read
+                      ? "bg-emerald-50/50 dark:bg-emerald-950/20 border-l-4 border-l-emerald-500"
+                      : ""
+                  }`}
+                  onClick={() => {
+                    if (!notif.read) markAsRead(notif.id);
+                  }}
                 >
-                  <Card
-                    className={`border-emerald-200/30 dark:border-emerald-800/30 cursor-pointer transition-all hover:shadow-md ${
-                      !notif.read ? "bg-emerald-50/50 dark:bg-emerald-950/20 border-l-4 border-l-emerald-500" : ""
-                    }`}
-                    onClick={() => {
-                      if (!notif.read) markAsRead(notif.id);
-                    }}
-                  >
-                    <CardContent className="p-4">
-                      <div className="flex items-start gap-3">
-                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${typeColors[notif.type] || typeColors.info}`}>
-                          <Icon className="h-4 w-4" />
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5">{typeIcon(notif.type)}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h4 className={`text-sm ${!notif.read ? "font-semibold" : "font-medium"}`}>
+                            {notif.title}
+                          </h4>
+                          {!notif.read && (
+                            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                          )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium text-sm">{notif.title}</p>
-                            {!notif.read && (
-                              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                            )}
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {notif.message}
-                          </p>
-                          <p className="text-[10px] text-muted-foreground/60 mt-1">
-                            {formatDateTime(notif.createdAt)}
-                          </p>
-                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">{notif.message}</p>
+                        <p className="text-[10px] text-muted-foreground/70 mt-1">
+                          {formatDateTime(notif.createdAt)}
+                        </p>
                       </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              );
-            })}
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
           </AnimatePresence>
         </div>
       )}
@@ -1909,119 +1907,125 @@ function NotificationsView() {
 // ============================================================
 
 function SettingsView() {
-  const { user, setDarkMode } = useAppStore();
+  const { user } = useAppStore();
   const { theme, setTheme } = useTheme();
+  const [name, setName] = useState(user?.name || "");
+  const [saving, setSaving] = useState(false);
 
-  const toggleDarkMode = async (checked: boolean) => {
-    setTheme(checked ? "dark" : "light");
-    setDarkMode(checked);
-    if (user?.id) {
-      await fetch("/api/settings", {
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.id, darkMode: checked }),
+        body: JSON.stringify({
+          userId: user?.id,
+          name,
+          darkMode: theme === "dark",
+        }),
       });
+      if (res.ok) {
+        toast.success("Settings saved");
+      } else {
+        toast.error("Failed to save settings");
+      }
+    } catch {
+      toast.error("Failed to save settings");
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold">Settings</h2>
-        <p className="text-sm text-muted-foreground">
-          Manage your application preferences
-        </p>
-      </div>
+      <h2 className="text-2xl font-bold">Settings</h2>
 
-      <div className="space-y-4 max-w-lg">
-        {/* Profile */}
-        <Card className="border-emerald-200/30 dark:border-emerald-800/30">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <User className="h-4 w-4 text-emerald-500" />
-              Profile
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center gap-3">
-              <Avatar className="h-12 w-12 bg-gradient-to-br from-emerald-400 to-teal-500">
-                <AvatarFallback className="bg-transparent text-white font-bold">
-                  {getInitials(user?.name || "U")}
-                </AvatarFallback>
-              </Avatar>
-              <div>
-                <p className="font-medium">{user?.name}</p>
-                <p className="text-sm text-muted-foreground">{user?.email}</p>
-                <Badge className="mt-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 capitalize">
-                  {user?.role?.replace("_", " ")}
-                </Badge>
-              </div>
+      <Card className="border-emerald-200/30 dark:border-emerald-800/30">
+        <CardHeader>
+          <CardTitle className="text-base">Profile Settings</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Email</Label>
+            <Input value={user?.email || ""} disabled />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Role</Label>
+            <Input value={user?.role?.replace("_", " ") || ""} disabled className="capitalize" />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-emerald-200/30 dark:border-emerald-800/30">
+        <CardHeader>
+          <CardTitle className="text-base">Appearance</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Dark Mode</p>
+              <p className="text-xs text-muted-foreground">Switch between light and dark themes</p>
             </div>
-          </CardContent>
-        </Card>
+            <Switch
+              checked={theme === "dark"}
+              onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
-        {/* Appearance */}
-        <Card className="border-emerald-200/30 dark:border-emerald-800/30">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Settings className="h-4 w-4 text-emerald-500" />
-              Appearance
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {theme === "dark" ? (
-                  <Moon className="h-5 w-5 text-emerald-500" />
-                ) : (
-                  <Sun className="h-5 w-5 text-emerald-500" />
-                )}
-                <div>
-                  <p className="font-medium text-sm">Dark Mode</p>
-                  <p className="text-xs text-muted-foreground">
-                    Switch between light and dark themes
-                  </p>
-                </div>
-              </div>
-              <Switch
-                checked={theme === "dark"}
-                onCheckedChange={toggleDarkMode}
-              />
-            </div>
-          </CardContent>
-        </Card>
+      <Card className="border-emerald-200/30 dark:border-emerald-800/30">
+        <CardHeader>
+          <CardTitle className="text-base">About</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p>Arabian Shield Manpower (ASM)</p>
+          <p>Private Management Portal v2.0</p>
+          <p>Built with Next.js, Prisma, and shadcn/ui</p>
+        </CardContent>
+      </Card>
 
-        {/* About */}
-        <Card className="border-emerald-200/30 dark:border-emerald-800/30">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Shield className="h-4 w-4 text-emerald-500" />
-              About
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-sm">
-              <span className="font-medium">Application:</span> Arabian Shield Manpower Management
-            </p>
-            <p className="text-sm">
-              <span className="font-medium">Version:</span> 1.0.0
-            </p>
-            <p className="text-xs text-muted-foreground mt-2">
-              Secure workforce management with encrypted data storage and role-based access control.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      <Button
+        onClick={handleSave}
+        disabled={saving}
+        className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
+      >
+        {saving ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
+        {saving ? "Saving..." : "Save Settings"}
+      </Button>
     </div>
   );
 }
 
 // ============================================================
-// MAIN APP (with sidebar layout)
+// MAIN APP
 // ============================================================
 
 function AppLayout() {
   const { currentView } = useAppStore();
+
+  const renderView = () => {
+    switch (currentView) {
+      case "dashboard":
+        return <DashboardView />;
+      case "employee-detail":
+        return <EmployeeDetailView />;
+      case "employee-form":
+        return <EmployeeFormView />;
+      case "delete-requests":
+        return <DeleteRequestsView />;
+      case "notifications":
+        return <NotificationsView />;
+      case "settings":
+        return <SettingsView />;
+      default:
+        return <DashboardView />;
+    }
+  };
 
   return (
     <div className="min-h-screen flex bg-background">
@@ -2037,12 +2041,7 @@ function AppLayout() {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
             >
-              {currentView === "dashboard" && <DashboardView />}
-              {currentView === "employee-detail" && <EmployeeDetailView />}
-              {currentView === "employee-form" && <EmployeeFormView />}
-              {currentView === "delete-requests" && <DeleteRequestsView />}
-              {currentView === "notifications" && <NotificationsView />}
-              {currentView === "settings" && <SettingsView />}
+              {renderView()}
             </motion.div>
           </AnimatePresence>
         </main>
@@ -2051,11 +2050,8 @@ function AppLayout() {
   );
 }
 
-// ============================================================
-// PAGE EXPORT
-// ============================================================
-
-export default function ASMPage() {
+export default function Home() {
+  // ASM - Arabian Shield Manpower
   const { currentView } = useAppStore();
 
   if (currentView === "login") {
