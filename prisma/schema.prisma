@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  password     String
+  role         String   @default("admin") // "super_admin" or "admin"
+  darkMode     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Employee {
+  id              String   @id @default(cuid())
+  employeeId      String   @unique
+  fullName        String
+  nationality     String?
+  dateOfBirth     String?
+  passportNumber  String?  // encrypted
+  idNumber        String?  // encrypted
+  phone           String?
+  email           String?
+  position        String?
+  department      String?
+  joinDate        String?
+  salary          String?  // encrypted
+  photoUrl        String?
+  skills          String?  // comma-separated
+  experience      String?
+  education       String?
+  languages       String?
+  emergencyContact String?
+  address         String?
+  notes           String?
+  status          String   @default("active") // active, inactive, deleted
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  attendances     Attendance[]
+  deleteRequests  DeleteRequest[]
+}
+
+model Attendance {
+  id          String   @id @default(cuid())
+  employeeId  String
+  date        String   // YYYY-MM-DD
+  status      String   @default("present") // present, absent, late, half-day
+  markedBy    String?
+  createdAt   DateTime @default(now())
+
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+}
+
+model DeleteRequest {
+  id          String   @id @default(cuid())
+  employeeId  String
+  employeeName String
+  requestedBy String
+  reason      String?
+  status      String   @default("pending") // pending, approved, rejected
+  reviewedBy  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  userId     String
+  title      String
+  message    String
+  type       String   @default("info") // info, warning, success, danger
+  read       Boolean  @default(false)
+  link       String?
+  createdAt  DateTime @default(now())
+}
