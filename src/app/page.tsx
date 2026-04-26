@@ -682,14 +682,19 @@ function EmployeeRow({
     >
       {/* Photo */}
       <td className="px-4 py-3">
-        <Avatar className="h-10 w-10 bg-gradient-to-br from-emerald-400 to-teal-500">
-          {employee.photoUrl && (
-            <AvatarImage src={employee.photoUrl} alt={employee.fullName} />
+        <div className="h-10 w-10 rounded-full overflow-hidden bg-gradient-to-br from-emerald-400 to-teal-500 flex-shrink-0">
+          {employee.photoUrl ? (
+            <img
+              src={employee.photoUrl}
+              alt={employee.fullName}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="h-full w-full flex items-center justify-center text-white text-xs font-bold">
+              {getInitials(employee.fullName)}
+            </div>
           )}
-          <AvatarFallback className="bg-transparent text-white text-xs font-bold">
-            {getInitials(employee.fullName)}
-          </AvatarFallback>
-        </Avatar>
+        </div>
       </td>
 
       {/* Name & Rating */}
@@ -1253,14 +1258,19 @@ function EmployeeDetailView() {
             </div>
 
             {/* Right: Photo */}
-            <Avatar className="h-[120px] w-[120px] rounded-lg bg-white/20 border-4 border-white/30">
-              {employee.photoUrl && (
-                <AvatarImage src={employee.photoUrl} alt={employee.fullName} className="object-cover" />
+            <div className="h-[120px] w-[120px] rounded-lg overflow-hidden border-4 border-white/30 bg-white/20 flex-shrink-0">
+              {employee.photoUrl ? (
+                <img
+                  src={employee.photoUrl}
+                  alt={employee.fullName}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="h-full w-full flex items-center justify-center text-white text-3xl font-bold">
+                  {getInitials(employee.fullName)}
+                </div>
               )}
-              <AvatarFallback className="bg-transparent text-white text-3xl font-bold">
-                {getInitials(employee.fullName)}
-              </AvatarFallback>
-            </Avatar>
+            </div>
           </div>
         </div>
 
@@ -1435,9 +1445,25 @@ function EmployeeFormView() {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
+  const [imageUploading, setImageUploading] = useState(false);
+
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file");
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be less than 5MB");
+      return;
+    }
+
+    setImageUploading(true);
     const fileFormData = new FormData();
     fileFormData.append("file", file);
     try {
@@ -1445,11 +1471,19 @@ function EmployeeFormView() {
       if (res.ok) {
         const data = await res.json();
         setFormData((prev) => ({ ...prev, photoUrl: data.url }));
-        toast.success("Image uploaded");
+        toast.success("Image uploaded successfully");
+      } else {
+        toast.error("Failed to upload image");
       }
     } catch {
       toast.error("Failed to upload image");
+    } finally {
+      setImageUploading(false);
     }
+  };
+
+  const handleRemoveImage = () => {
+    setFormData((prev) => ({ ...prev, photoUrl: null }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1512,31 +1546,81 @@ function EmployeeFormView() {
       <form onSubmit={handleSubmit}>
         <Card className="border-emerald-200/30 dark:border-emerald-800/30">
           <CardContent className="p-6 space-y-6">
-            {/* Photo upload */}
+            {/* Photo upload with preview */}
             <div className="space-y-2">
-              <Label className="text-xs font-semibold">Photo</Label>
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  <Avatar className="h-24 w-24 bg-gradient-to-br from-emerald-400 to-teal-500">
-                    {formData.photoUrl && (
-                      <AvatarImage src={formData.photoUrl} alt="Preview" className="object-cover" />
-                    )}
-                    <AvatarFallback className="bg-transparent text-white text-xl font-bold">
-                      {formData.fullName ? getInitials(formData.fullName) : "?"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <label className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-full opacity-0 hover:opacity-100 transition-opacity cursor-pointer">
-                    <Camera className="h-6 w-6 text-white" />
+              <Label className="flex items-center gap-1.5 text-xs">
+                <Camera className="h-3.5 w-3.5 text-emerald-500" />
+                Employee Photo
+              </Label>
+              <div className="flex items-start gap-6">
+                {/* Image preview area */}
+                <div className="relative group">
+                  {formData.photoUrl ? (
+                    <div className="relative h-32 w-32 rounded-xl overflow-hidden border-2 border-emerald-200 dark:border-emerald-800 shadow-md">
+                      <img
+                        src={formData.photoUrl}
+                        alt="Employee preview"
+                        className="h-full w-full object-cover"
+                      />
+                      {/* Remove button overlay */}
+                      <button
+                        type="button"
+                        onClick={handleRemoveImage}
+                        className="absolute top-1 right-1 h-6 w-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 shadow-md"
+                        title="Remove photo"
+                      >
+                        <XCircle className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="h-32 w-32 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border-2 border-dashed border-emerald-300 dark:border-emerald-700 flex flex-col items-center justify-center gap-2">
+                      <Camera className="h-8 w-8 text-emerald-400 dark:text-emerald-600" />
+                      <span className="text-[10px] text-muted-foreground text-center px-2">No photo</span>
+                    </div>
+                  )}
+                </div>
+                {/* Upload controls */}
+                <div className="flex flex-col gap-2 pt-1">
+                  <label className="cursor-pointer">
                     <input
                       type="file"
                       accept="image/*"
                       onChange={handleImageSelect}
                       className="hidden"
                     />
+                    <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                      imageUploading
+                        ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-500 cursor-wait"
+                        : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md hover:shadow-lg"
+                    }`}>
+                      {imageUploading ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          Uploading...
+                        </>
+                      ) : (
+                        <>
+                          <Camera className="h-4 w-4" />
+                          {formData.photoUrl ? "Change Photo" : "Upload Photo"}
+                        </>
+                      )}
+                    </div>
                   </label>
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  Click the avatar to upload a photo
+                  <p className="text-[11px] text-muted-foreground">
+                    JPG, PNG, or WebP. Max 5MB.
+                  </p>
+                  {formData.photoUrl && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleRemoveImage}
+                      className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 h-7 text-xs"
+                    >
+                      <Trash2 className="h-3 w-3 mr-1" />
+                      Remove Photo
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>

@@ -108,3 +108,29 @@ Stage Summary:
   4. Super Admin rejects → Admin notified of rejection
 - Notification click marks as read and removes unread badge
 - Navbar layout: search on left, spacer, then dark mode/notification/logout on far right
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Add image preview in employee form and ensure images display in dashboard and profile
+
+Work Log:
+- Created `/api/file/[path]/route.ts` — serves uploaded files from the `upload/` directory with proper content-type headers, caching, and security checks (path traversal prevention)
+- Added Next.js rewrite in `next.config.ts`: `/upload/:path*` → `/api/file/:path*` so uploaded images are accessible via their stored URL paths
+- Replaced EmployeeFormView photo upload section:
+  - Added large 128×128 image preview with rounded-xl border
+  - Added "No photo" placeholder with camera icon and dashed border when no image
+  - Added "Upload Photo" / "Change Photo" button with loading spinner during upload
+  - Added "Remove Photo" button (both overlay on hover and below the upload button)
+  - Added file validation: image type check, 5MB size limit
+  - Added `imageUploading` state for loading indicator
+  - Added `handleRemoveImage` function
+- Replaced dashboard EmployeeRow photo from `Avatar/AvatarImage` to native `<img>` with proper object-cover for reliable rendering
+- Replaced EmployeeDetailView (CV/profile) photo from `Avatar/AvatarImage` to native `<img>` with proper object-cover for reliable rendering
+- All three display locations (form preview, dashboard row, profile page) now consistently show uploaded images
+
+Stage Summary:
+- Image upload now shows a clear preview in the form
+- Uploaded images display correctly in dashboard list and employee profile page
+- File serving API route created to serve uploaded images via `/upload/filename` URLs
+- Next.js rewrite config added for the `/upload/*` path

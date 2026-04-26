@@ -7,6 +7,14 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  async rewrites() {
+    return [
+      {
+        source: "/upload/:path*",
+        destination: "/api/file/:path*",
+      },
+    ];
+  },
 };
 
 export default nextConfig;
