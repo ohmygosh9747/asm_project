@@ -708,7 +708,7 @@ function EmployeeRow({
         <div className="flex items-center gap-3">
           {[0, 1, 2].map((daysAgo) => {
             const att = getAttendanceForDay(daysAgo);
-            const status = att?.status || "present";
+            const status = att?.status || (daysAgo === 0 ? "absent" : "present");
             const isPresent = status === "present";
             return (
               <button
@@ -839,15 +839,15 @@ function DashboardView() {
     return pages;
   }, [safeCurrentPage, totalPages]);
 
-  // Stats
+  // Stats — today defaults to absent if no record
   const todayStr = getDateStr(0);
   const presentToday = employees.filter((e) => {
     const todayAtt = e.attendances?.find((a) => a.date === todayStr);
-    return todayAtt?.status === "present" || !todayAtt;
+    return todayAtt?.status === "present";
   }).length;
   const absentToday = employees.filter((e) => {
     const todayAtt = e.attendances?.find((a) => a.date === todayStr);
-    return todayAtt?.status === "absent";
+    return !todayAtt || todayAtt.status === "absent";
   }).length;
 
   return (
@@ -1383,28 +1383,12 @@ function EmployeeDetailView() {
       </Dialog>
 
       {/* CV Content */}
-      <div ref={printRef} className="bg-white rounded-xl shadow-lg overflow-hidden">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white p-6">
-          <div className="flex items-center justify-between">
-            {/* Left: Logo */}
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-                <Shield className="w-7 h-7 text-white" />
-              </div>
-              <div>
-                <h1 className="text-lg font-bold">ASM</h1>
-                <p className="text-xs text-emerald-100">Arabian Shield Manpower</p>
-              </div>
-            </div>
-
-            {/* Center: Title */}
-            <div className="text-center">
-              <h2 className="text-xl font-bold tracking-wider uppercase">WORKERS PROFILE</h2>
-            </div>
-
-            {/* Right: Photo */}
-            <div className="h-[120px] w-[120px] rounded-lg overflow-hidden border-4 border-white/30 bg-white/20 flex-shrink-0">
+      <div ref={printRef} className="bg-white rounded-xl shadow-lg overflow-hidden text-gray-900">
+        {/* Header Bar */}
+        <div className="bg-gradient-to-r from-emerald-700 via-emerald-600 to-teal-600 text-white px-8 py-6">
+          <div className="flex items-center gap-6">
+            {/* Photo */}
+            <div className="h-[100px] w-[100px] rounded-xl overflow-hidden border-[3px] border-white/40 bg-white/20 flex-shrink-0 shadow-lg">
               {employee.photoUrl ? (
                 <img
                   src={employee.photoUrl}
@@ -1412,109 +1396,115 @@ function EmployeeDetailView() {
                   className="h-full w-full object-cover"
                 />
               ) : (
-                <div className="h-full w-full flex items-center justify-center text-white text-3xl font-bold">
+                <div className="h-full w-full flex items-center justify-center text-white text-2xl font-bold">
                   {getInitials(employee.fullName)}
                 </div>
               )}
             </div>
+            {/* Name & ID */}
+            <div className="flex-1 min-w-0">
+              <h2 className="text-2xl font-bold tracking-wide leading-tight">{employee.fullName}</h2>
+              <div className="flex items-center gap-3 mt-2">
+                <span className="text-sm font-medium text-emerald-100 bg-white/15 px-2.5 py-0.5 rounded-md">
+                  ID: {employee.employeeId}
+                </span>
+                {employee.position && (
+                  <span className="text-sm font-medium text-emerald-100 bg-white/15 px-2.5 py-0.5 rounded-md">
+                    {employee.position}
+                  </span>
+                )}
+              </div>
+            </div>
+            {/* Logo & Title */}
+            <div className="text-right flex-shrink-0">
+              <div className="flex items-center justify-end gap-2 mb-1">
+                <Shield className="w-5 h-5 text-emerald-200" />
+                <span className="text-sm font-bold tracking-widest">ASM</span>
+              </div>
+              <p className="text-[10px] text-emerald-200 tracking-wider uppercase">Workers Profile</p>
+            </div>
           </div>
         </div>
 
-        {/* Body sections */}
-        <div className="p-6 space-y-6 text-gray-900">
-          {/* Section 1: Personal Details */}
-          <div>
-            <h3 className="text-base font-bold flex items-center gap-2 mb-3 text-emerald-700">
-              <span className="text-emerald-600">&#10003;</span>
-              PERSONAL DETAILS
+        {/* Body */}
+        <div className="px-8 py-6 space-y-0">
+          {/* Personal Details */}
+          <div className="mb-6">
+            <h3 className="text-[11px] font-bold tracking-[0.2em] uppercase text-emerald-600 mb-4 pb-1.5 border-b-2 border-emerald-600">
+              Personal Details
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-              <div className="flex gap-2">
-                <span className="font-semibold text-gray-500 min-w-[24px]">1.</span>
-                <span className="font-semibold min-w-[110px]">Name :</span>
-                <span>{employee.fullName}</span>
+            <div className="grid grid-cols-2 gap-x-12 gap-y-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5">Full Name</p>
+                <p className="text-sm font-semibold text-gray-800">{employee.fullName}</p>
               </div>
-              <div className="flex gap-2">
-                <span className="font-semibold text-gray-500 min-w-[24px]">2.</span>
-                <span className="font-semibold min-w-[110px]">Com. ID :</span>
-                <span>{employee.employeeId}</span>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5">Company ID</p>
+                <p className="text-sm font-semibold text-gray-800">{employee.employeeId}</p>
               </div>
-              <div className="flex gap-2">
-                <span className="font-semibold text-gray-500 min-w-[24px]">3.</span>
-                <span className="font-semibold min-w-[110px] flex items-center gap-1">
-                  Passport No :
-                  <Lock className="h-3 w-3 text-amber-500" />
-                </span>
-                <span>{employee.passportNumber || "—"}</span>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5 flex items-center gap-1">
+                  Passport Number
+                  <Lock className="h-2.5 w-2.5 text-amber-500" />
+                </p>
+                <p className="text-sm font-semibold text-gray-800">{employee.passportNumber || "—"}</p>
               </div>
-              <div className="flex gap-2">
-                <span className="font-semibold text-gray-500 min-w-[24px]">4.</span>
-                <span className="font-semibold min-w-[110px] flex items-center gap-1">
-                  ID. NO :
-                  <Lock className="h-3 w-3 text-amber-500" />
-                </span>
-                <span>{employee.idNumber || "—"}</span>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5 flex items-center gap-1">
+                  ID Number
+                  <Lock className="h-2.5 w-2.5 text-amber-500" />
+                </p>
+                <p className="text-sm font-semibold text-gray-800">{employee.idNumber || "—"}</p>
               </div>
-              <div className="flex gap-2">
-                <span className="font-semibold text-gray-500 min-w-[24px]">5.</span>
-                <span className="font-semibold min-w-[110px]">Joining Date :</span>
-                <span>{formatDateCV(employee.joinDate)}</span>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5">Joining Date</p>
+                <p className="text-sm font-semibold text-gray-800">{formatDateCV(employee.joinDate)}</p>
               </div>
             </div>
           </div>
 
-          <Separator />
-
-          {/* Section 2: Professional Details */}
-          <div>
-            <h3 className="text-base font-bold flex items-center gap-2 mb-3 text-emerald-700">
-              <span className="text-emerald-600">&#10003;</span>
-              PROFESSIONAL DETAILS
+          {/* Professional Details */}
+          <div className="mb-6">
+            <h3 className="text-[11px] font-bold tracking-[0.2em] uppercase text-emerald-600 mb-4 pb-1.5 border-b-2 border-emerald-600">
+              Professional Details
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-              <div className="flex gap-2">
-                <span className="font-semibold text-gray-500 min-w-[24px]">6.</span>
-                <span className="font-semibold min-w-[110px]">Com. Name :</span>
-                <span>{employee.companyName || "—"}</span>
+            <div className="grid grid-cols-2 gap-x-12 gap-y-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5">Company Name</p>
+                <p className="text-sm font-semibold text-gray-800">{employee.companyName || "—"}</p>
               </div>
-              <div className="flex gap-2">
-                <span className="font-semibold text-gray-500 min-w-[24px]">7.</span>
-                <span className="font-semibold min-w-[110px]">Position :</span>
-                <span>{employee.position || "—"}</span>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5">Position</p>
+                <p className="text-sm font-semibold text-gray-800">{employee.position || "—"}</p>
               </div>
-              <div className="flex gap-2 items-center">
-                <span className="font-semibold text-gray-500 min-w-[24px]">8.</span>
-                <span className="font-semibold min-w-[110px]">Passport Status :</span>
-                <span>{statusBadge(employee.passportStatus)}</span>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5">Passport Status</p>
+                <div className="mt-0.5">{statusBadge(employee.passportStatus)}</div>
               </div>
-              <div className="flex gap-2 items-center">
-                <span className="font-semibold text-gray-500 min-w-[24px]">9.</span>
-                <span className="font-semibold min-w-[110px]">ID. Status :</span>
-                <span>{statusBadge(employee.idStatus)}</span>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5">ID Status</p>
+                <div className="mt-0.5">{statusBadge(employee.idStatus)}</div>
               </div>
             </div>
           </div>
 
-          <Separator />
-
-          {/* Section 3: Assessment Grade */}
+          {/* Assessment Grade */}
           <div>
-            <h3 className="text-base font-bold flex items-center gap-2 mb-3 text-emerald-700">
-              <span className="text-emerald-600">&#10003;</span>
-              ASSESSMENT GRADE
+            <h3 className="text-[11px] font-bold tracking-[0.2em] uppercase text-emerald-600 mb-4 pb-1.5 border-b-2 border-emerald-600">
+              Assessment Grade
             </h3>
             <div className="flex items-center gap-3">
-              <StarRating rating={employee.rating} size={20} />
-              <span className="text-sm font-semibold text-gray-600">{employee.rating}/5</span>
+              <StarRating rating={employee.rating} size={22} />
+              <span className="text-lg font-bold text-gray-700">{employee.rating}<span className="text-sm text-gray-400 font-normal">/5</span></span>
             </div>
           </div>
+        </div>
 
-          <Separator />
-
-          {/* Footer */}
-          <div className="text-center text-xs text-gray-400 pt-2">
+        {/* Footer */}
+        <div className="bg-gray-50 px-8 py-3 border-t border-gray-200">
+          <p className="text-[10px] text-gray-400 tracking-wider text-center uppercase">
             Arabian Shield Manpower — Confidential Workers Profile
-          </div>
+          </p>
         </div>
       </div>
     </div>

@@ -184,3 +184,27 @@ Stage Summary:
 - Page resets to 1 when filter or search changes
 - Full pagination controls: first/prev/page numbers/next/last
 - Shows "Showing X to Y of Z employees" info
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Default today's attendance to absent (red) and redesign employee CV with professional styling
+
+Work Log:
+- Changed EmployeeRow attendance default: today (daysAgo=0) defaults to "absent" (red), past days still default to "present" (green)
+- Updated DashboardView stats: employees without a today attendance record are now counted as absent
+- Completely redesigned the Employee Detail View (CV/Profile) with professional styling:
+  - **Header**: Gradient emerald bar with photo on left, employee name large & bold in center, ID/position as badge pills, ASM logo+title on right
+  - **Personal Details**: Clean label-above-value layout with small uppercase tracking labels in gray-400, values in semibold gray-800, 2-column grid with generous spacing
+  - **Professional Details**: Same clean label-above-value layout, status badges properly positioned
+  - **Assessment Grade**: Larger star rating with bold score display
+  - **Section dividers**: Emerald-600 underline borders under section headings instead of separator lines
+  - **Footer**: Subtle gray-50 background bar with centered confidential text
+  - Removed old numbered-list format ("1.", "2.", etc.) and colon-separated inline format
+  - Removed Separator components in favor of section spacing
+- Build compiled successfully
+
+Stage Summary:
+- Today's attendance now defaults to red (absent) — must be explicitly marked present
+- CV completely redesigned with professional, clean, modern layout
+- Key design changes: label-above-value format, uppercase tracking section headers, emerald underline dividers, photo in header, name prominent, badge pills for ID/position
