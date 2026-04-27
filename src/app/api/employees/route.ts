@@ -26,7 +26,8 @@ export async function GET(request: NextRequest) {
       include: {
         attendances: {
           orderBy: { date: "desc" },
-          take: 7,
+          // Get last 31 days of attendance to ensure dashboard 3-day view always works
+          take: 31,
         },
       },
     });
@@ -38,7 +39,9 @@ export async function GET(request: NextRequest) {
       idNumber: emp.idNumber ? decrypt(emp.idNumber) : null,
     }));
 
-    return NextResponse.json(decryptedEmployees);
+    return NextResponse.json(decryptedEmployees, {
+      headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Failed to fetch employees" }, { status: 500 });

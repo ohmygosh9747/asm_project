@@ -45,7 +45,9 @@ export async function GET(request: NextRequest) {
       orderBy: { date: "desc" },
       include: { employee: { select: { fullName: true, employeeId: true } } },
     });
-    return NextResponse.json(attendances);
+    return NextResponse.json(attendances, {
+      headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
+    });
   } catch (error) {
     console.error("Attendance GET error:", error);
     return NextResponse.json({ error: "Failed" }, { status: 500 });
@@ -56,6 +58,17 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { employeeId, date, status, markedBy, dayName, overtimeHours } = body;
+
+    // Validate required fields
+    if (!employeeId || !date || !status) {
+      return NextResponse.json({ error: "Missing required fields: employeeId, date, status" }, { status: 400 });
+    }
+
+    // Validate status value
+    const validStatuses = ["present", "absent", "no_site", "overtime", "not_marked"];
+    if (!validStatuses.includes(status)) {
+      return NextResponse.json({ error: `Invalid status: ${status}. Must be one of: ${validStatuses.join(", ")}` }, { status: 400 });
+    }
 
     // Compute dayName from date if not provided
     const computedDayName = dayName || getDayNameFromDate(date);
@@ -150,7 +163,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(attendance);
   } catch (error) {
     console.error("Attendance POST error:", error);
-    return NextResponse.json({ error: "Failed" }, { status: 500 });
+    return NextResponse.json({ error: `Failed to mark attendance: ${error instanceof Error ? error.message : "Unknown error"}` }, { status: 500 });
   }
 }
 

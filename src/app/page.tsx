@@ -685,7 +685,7 @@ function EmployeeRow({
   onAttendanceChange,
 }: {
   employee: Employee;
-  onAttendanceChange: () => void;
+  onAttendanceChange: () => Promise<void>;
 }) {
   const { setView, setSelectedEmployee, user } = useAppStore();
   const [openDay, setOpenDay] = useState<number | null>(null);
@@ -703,8 +703,6 @@ function EmployeeRow({
   const markAttendance = async (daysAgo: number, status: string, overtimeHours?: number) => {
     const dateStr = getDateStr(daysAgo);
     try {
-      // Overtime auto-sets as present with overtime hours
-      const actualStatus = status === "overtime" ? "present" : status;
       const res = await fetch("/api/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -718,18 +716,22 @@ function EmployeeRow({
         }),
       });
       if (res.ok) {
+        const returnedAtt = await res.json();
         const label = status === "no_site" ? "No Site" : status === "overtime" ? `OT: ${overtimeHours || 0}h (Present)` : status.charAt(0).toUpperCase() + status.slice(1);
         toast.success(`Marked ${label}`);
       } else {
-        toast.error("Failed to update attendance");
+        const errData = await res.json().catch(() => ({}));
+        toast.error(`Failed to update attendance: ${errData.error || "Unknown error"}`);
       }
       setOpenDay(null);
       setDropdownPos(null);
       setShowOvertimeInput(false);
       setOvertimeInput("");
-      onAttendanceChange();
-    } catch {
+      // Await the re-fetch to ensure UI updates properly
+      await onAttendanceChange();
+    } catch (err) {
       toast.error("Failed to update attendance");
+      console.error("Attendance marking error:", err);
     }
   };
 
@@ -980,12 +982,17 @@ function DashboardView() {
       const params = new URLSearchParams();
       if (searchQuery) params.set("search", searchQuery);
       params.set("status", "active");
-      const res = await fetch(`/api/employees?${params}`);
+      // Add timestamp to prevent browser/Next.js caching
+      params.set("_t", String(Date.now()));
+      const res = await fetch(`/api/employees?${params}`, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setEmployees(data);
+      } else {
+        console.error("Failed to fetch employees:", res.status, await res.text().catch(() => ""));
       }
-    } catch {
+    } catch (err) {
+      console.error("fetchEmployees error:", err);
       toast.error("Failed to load employees");
     } finally {
       setLoading(false);
@@ -1313,7 +1320,8 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/attendance?employeeId=${employeeId}&month=${selectedMonth}&year=${selectedYear}`
+        `/api/attendance?employeeId=${employeeId}&month=${selectedMonth}&year=${selectedYear}&_t=${Date.now()}`,
+        { cache: "no-store" }
       );
       if (res.ok) {
         const data = await res.json();
@@ -1322,8 +1330,11 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
           map[a.date] = { status: a.status, id: a.id, dayName: a.dayName || "", overtimeHours: a.overtimeHours || undefined };
         });
         setAttendanceMap(map);
+      } else {
+        console.error("Failed to fetch attendance:", res.status);
       }
-    } catch {
+    } catch (err) {
+      console.error("fetchAttendance error:", err);
       toast.error("Failed to load attendance");
     } finally {
       setLoading(false);
@@ -1429,12 +1440,17 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
       if (res.ok) {
         const label = status === "overtime" ? `OT: ${overtimeHours || 0}h (Present)` : status === "no_site" ? "No Site" : status.charAt(0).toUpperCase() + status.slice(1);
         toast.success(`Marked ${label}`);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        toast.error(`Failed to mark attendance: ${errData.error || "Unknown error"}`);
       }
       setActiveDay(null);
       setShowOvertimeInput(false);
       setOvertimeInput("");
-      fetchAttendance();
-    } catch {
+      // Await the re-fetch to ensure the calendar updates immediately
+      await fetchAttendance();
+    } catch (err) {
+      console.error("Calendar attendance marking error:", err);
       toast.error("Failed to update attendance");
     }
   };
@@ -1741,7 +1757,7 @@ function EmployeeDetailView() {
 
   useEffect(() => {
     if (!selectedEmployeeId) return;
-    fetch(`/api/employees/${selectedEmployeeId}`)
+    fetch(`/api/employees/${selectedEmployeeId}?_t=${Date.now()}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
         setEmployee(data);
