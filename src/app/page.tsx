@@ -690,6 +690,7 @@ function EmployeeRow({
   const { setView, setSelectedEmployee, user } = useAppStore();
   const [openDay, setOpenDay] = useState<number | null>(null);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
+  const [dropdownDirection, setDropdownDirection] = useState<"up" | "down">("down");
   const triggerRefs = useRef<Record<number, HTMLButtonElement | null>>({});
 
   const getAttendanceForDay = (daysAgo: number): Attendance | undefined => {
@@ -756,10 +757,25 @@ function EmployeeRow({
       const trigger = triggerRefs.current[daysAgo];
       if (trigger) {
         const rect = trigger.getBoundingClientRect();
-        setDropdownPos({
-          top: rect.bottom + 6,
-          left: rect.left + rect.width / 2,
-        });
+        const viewportHeight = window.innerHeight;
+        const spaceBelow = viewportHeight - rect.bottom;
+        const dropdownHeight = 260; // approximate dropdown height with overtime
+
+        if (spaceBelow < dropdownHeight) {
+          // Position above the trigger
+          setDropdownPos({
+            top: rect.top - 6,
+            left: rect.left + rect.width / 2,
+          });
+          setDropdownDirection("up");
+        } else {
+          // Position below the trigger
+          setDropdownPos({
+            top: rect.bottom + 6,
+            left: rect.left + rect.width / 2,
+          });
+          setDropdownDirection("down");
+        }
         setOpenDay(daysAgo);
       }
     }
@@ -797,7 +813,7 @@ function EmployeeRow({
         style={{
           top: dropdownPos.top,
           left: dropdownPos.left,
-          transform: "translateX(-50%)",
+          transform: dropdownDirection === "up" ? "translateX(-50%) translateY(-100%)" : "translateX(-50%)",
         }}
       >
         <div className="bg-popover border border-border rounded-lg shadow-xl p-2.5 w-[150px]">
@@ -1305,6 +1321,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
   const [editMode, setEditMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [activeDay, setActiveDay] = useState<string | null>(null);
+  const [activeDayDirection, setActiveDayDirection] = useState<"up" | "down">("down");
   const [overtimeInput, setOvertimeInput] = useState<string>("");
   const [showOvertimeInput, setShowOvertimeInput] = useState(false);
 
@@ -1585,17 +1602,33 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
             else if (dayInfo.isCurrentMonth && isAbsent) accentColor = "bg-red-500";
             else if (dayInfo.isCurrentMonth && isNoSite) accentColor = "bg-gray-400";
 
+            // Check if this date is in the future (after today)
+            const dateParts = dayInfo.dateStr.split("-");
+            const cellDate = new Date(Number(dateParts[2]), Number(dateParts[1]) - 1, Number(dateParts[0]));
+            const todayCompare = new Date();
+            todayCompare.setHours(0, 0, 0, 0);
+            cellDate.setHours(0, 0, 0, 0);
+            const isFutureDate = cellDate > todayCompare;
+            const canEdit = editMode && dayInfo.isCurrentMonth && !isFutureDate;
+
             return (
               <div
                 key={idx}
                 className={`
                   relative min-h-[60px] p-1.5 border-b border-r border-gray-100 dark:border-slate-700 print:border-gray-100
                   ${cellBg}
-                  ${editMode && dayInfo.isCurrentMonth ? "cursor-pointer" : ""}
+                  ${canEdit ? "cursor-pointer" : ""}
+                  ${editMode && dayInfo.isCurrentMonth && isFutureDate ? "opacity-50 cursor-not-allowed" : ""}
                   transition-colors duration-150
                 `}
-                onClick={() => {
-                  if (editMode && dayInfo.isCurrentMonth) {
+                onClick={(e) => {
+                  if (canEdit) {
+                    // Detect available space for dropdown direction
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const viewportHeight = window.innerHeight;
+                    const spaceBelow = viewportHeight - rect.bottom;
+                    const popupHeight = 220;
+                    setActiveDayDirection(spaceBelow < popupHeight ? "up" : "down");
                     setActiveDay(activeDay === dayInfo.dateStr ? null : dayInfo.dateStr);
                   }
                 }}
@@ -1648,7 +1681,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
 
                 {/* Edit mode: option popup for this day */}
                 {editMode && isActive && dayInfo.isCurrentMonth && (
-                  <div className="absolute z-30 left-1/2 -translate-x-1/2 top-full mt-0.5 bg-white dark:bg-slate-700 rounded-lg shadow-xl border border-gray-200 dark:border-slate-600 p-2 w-[150px]">
+                  <div className={`absolute z-30 left-1/2 -translate-x-1/2 ${activeDayDirection === "up" ? "bottom-full mb-1" : "top-full mt-1"} bg-white dark:bg-slate-700 rounded-lg shadow-xl border border-gray-200 dark:border-slate-600 p-2 w-[150px]`}>
                     <p className="text-[9px] text-gray-400 dark:text-gray-500 font-medium px-1 pb-1.5 border-b border-gray-100 dark:border-slate-600 mb-2">
                       {dayInfo.dayName}, {dayInfo.dateStr}
                     </p>
@@ -1727,7 +1760,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
 
       {editMode && (
         <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2 italic">
-          Click on any date to mark attendance: Present (green), Absent (red), No Site (grey), or Overtime (blue, auto-sets as Present)
+          Click on any date up to today to mark attendance: Present (green), Absent (red), No Site (grey), or Overtime (blue, auto-sets as Present). Future dates cannot be edited.
         </p>
       )}
     </div>

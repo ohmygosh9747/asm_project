@@ -20,14 +20,26 @@ export async function GET(request: NextRequest) {
       ];
     }
 
+    // Compute current and previous month suffixes for reliable date filtering
+    // DD-MM-YYYY strings don't sort chronologically in SQLite, so we filter by month suffix
+    const now = new Date();
+    const currentMM = String(now.getMonth() + 1).padStart(2, "0");
+    const currentYYYY = String(now.getFullYear());
+    const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevMM = String(prevMonthDate.getMonth() + 1).padStart(2, "0");
+    const prevYYYY = String(prevMonthDate.getFullYear());
+
     const employees = await db.employee.findMany({
       where,
       orderBy: { createdAt: "desc" },
       include: {
         attendances: {
-          orderBy: { date: "desc" },
-          // Get last 31 days of attendance to ensure dashboard 3-day view always works
-          take: 31,
+          where: {
+            OR: [
+              { date: { endsWith: `-${currentMM}-${currentYYYY}` } },
+              { date: { endsWith: `-${prevMM}-${prevYYYY}` } },
+            ],
+          },
         },
       },
     });

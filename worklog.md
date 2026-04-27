@@ -27,3 +27,21 @@ Stage Summary:
 - All attendance marking issues should now be resolved
 - Key files modified: src/app/api/employees/route.ts, src/app/api/attendance/route.ts, src/app/page.tsx
 - The main fixes were: increasing attendance take limit, adding cache control, awaiting async re-fetches
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix attendance marking bug, restrict calendar editing to today, fix dropdown positioning near footer
+
+Work Log:
+- Identified ROOT CAUSE of attendance marking bug: employees API used `take: 31` with `orderBy: { date: "desc" }` on DD-MM-YYYY strings. SQLite sorts these alphabetically, NOT chronologically, so `take: 31` could cut off recent dates when crossing month boundaries.
+- Fixed employees API: Replaced `take: 31` with proper month-based filtering (current + previous month) using `endsWith` pattern matching
+- Fixed calendar: Added future date restriction - only dates up to today are editable. Future dates show as opacity-50 with cursor-not-allowed
+- Fixed dropdown positioning in dashboard: Added viewport space detection. When dropdown would overflow below viewport, it opens upward instead
+- Fixed dropdown positioning in calendar: Added activeDayDirection state. Popup opens upward when near bottom of screen
+- Updated calendar edit hint text to mention future date restriction
+- Build successful, API tests pass
+
+Stage Summary:
+- Attendance marking bug FIXED: Root cause was `take: 31` with incorrect string-based date sorting
+- Calendar future date restriction IMPLEMENTED: Only dates up to today are editable
+- Dropdown upward positioning IMPLEMENTED: Both calendar and dashboard list detect screen space and open upward when needed
