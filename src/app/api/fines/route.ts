@@ -1,6 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
+// ============================================================
+// STAR RATING CALCULATION
+// ============================================================
+async function recalculateStarRating(employeeId: string) {
+  try {
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+    const mm = String(currentMonth).padStart(2, "0");
+    const yyyy = String(currentYear);
+
+    const monthAttendance = await db.attendance.findMany({
+      where: { employeeId, date: { endsWith: `-${mm}-${yyyy}` } },
+    });
+
+    const absentCount = monthAttendance.filter((a) => a.status === "absent").length;
+    const totalOvertimeHours = monthAttendance.reduce((sum, a) => sum + (a.overtimeHours || 0), 0);
+    const fineCount = await db.fine.count({ where: { employeeId } });
+    const warningCount = await db.warning.count({ where: { employeeId } });
+
+    let rating = 5.0;
+    if (absentCount > 2) rating -= (absentCount - 2) * 0.1;
+    rating -= fineCount * 1.0;
+    rating -= warningCount * 0.5;
+    rating += totalOvertimeHours * 0.2;
+    rating = Math.max(0.0, Math.min(5.0, Math.round(rating * 10) / 10));
+
+    await db.employee.update({ where: { id: employeeId }, data: { rating } });
+  } catch (error) {
+    console.error("Star rating recalculation error:", error);
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -54,6 +87,9 @@ export async function POST(request: NextRequest) {
         createdBy: createdBy || null,
       },
     });
+
+    // Recalculate star rating for this employee
+    await recalculateStarRating(employeeId);
 
     return NextResponse.json(fine, { status: 201 });
   } catch (error) {

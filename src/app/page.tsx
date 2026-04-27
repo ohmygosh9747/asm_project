@@ -48,6 +48,8 @@ import {
   FileWarning,
   FileX,
   X,
+  MessageCircle,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -234,7 +236,7 @@ function getDayLabel(daysAgo: number): string {
   return d.toLocaleDateString("en-US", { weekday: "short" });
 }
 
-// Star rating component
+// Star rating component with partial fill support
 function StarRating({
   rating,
   size = 14,
@@ -251,26 +253,42 @@ function StarRating({
 
   return (
     <div className="flex items-center gap-0.5">
-      {[1, 2, 3, 4, 5].map((star) => (
-        <button
-          key={star}
-          type="button"
-          disabled={!interactive}
-          onClick={() => interactive && onChange?.(star)}
-          onMouseEnter={() => interactive && setHoverRating(star)}
-          onMouseLeave={() => interactive && setHoverRating(0)}
-          className={`${interactive ? "cursor-pointer" : "cursor-default"} transition-transform ${interactive ? "hover:scale-110" : ""}`}
-        >
-          <Star
-            size={size}
-            className={
-              star <= displayRating
-                ? "fill-amber-400 text-amber-400"
-                : "fill-gray-200 text-gray-300 dark:fill-gray-600 dark:text-gray-600"
-            }
-          />
-        </button>
-      ))}
+      {[1, 2, 3, 4, 5].map((star) => {
+        const fillPercent = Math.min(100, Math.max(0, (displayRating - (star - 1)) * 100));
+        return (
+          <button
+            key={star}
+            type="button"
+            disabled={!interactive}
+            onClick={() => interactive && onChange?.(star)}
+            onMouseEnter={() => interactive && setHoverRating(star)}
+            onMouseLeave={() => interactive && setHoverRating(0)}
+            className={`${interactive ? "cursor-pointer" : "cursor-default"} transition-transform ${interactive ? "hover:scale-110" : ""}`}
+          >
+            <svg
+              width={size}
+              height={size}
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <defs>
+                <linearGradient id={`star-fill-${star}-${size}`}>
+                  <stop offset={`${fillPercent}%`} stopColor="#fbbf24" />
+                  <stop offset={`${fillPercent}%`} stopColor={fillPercent > 0 ? "#d1d5db" : "#e5e7eb"} />
+                </linearGradient>
+              </defs>
+              <path
+                d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+                fill={`url(#star-fill-${star}-${size})`}
+                stroke={fillPercent > 0 ? "#fbbf24" : "#d1d5db"}
+                strokeWidth="0.5"
+              />
+            </svg>
+          </button>
+        );
+      })}
+      <span className="text-[10px] font-semibold text-muted-foreground ml-1">{rating.toFixed(1)}</span>
     </div>
   );
 }
@@ -672,7 +690,10 @@ function EmployeeRow({
     return employee.attendances?.find((a) => a.date === dateStr);
   };
 
-  const markAttendance = async (daysAgo: number, status: string) => {
+  const [overtimeInput, setOvertimeInput] = useState<string>("");
+  const [showOvertimeInput, setShowOvertimeInput] = useState(false);
+
+  const markAttendance = async (daysAgo: number, status: string, overtimeHours?: number) => {
     const dateStr = getDateStr(daysAgo);
     try {
       const res = await fetch("/api/attendance", {
@@ -684,15 +705,19 @@ function EmployeeRow({
           dayName: getDayNameFromDateStr(dateStr),
           status,
           markedBy: user?.name || "System",
+          overtimeHours: status === "overtime" ? overtimeHours || 0 : undefined,
         }),
       });
       if (res.ok) {
-        toast.success(`Marked ${status === "no_site" ? "No Site" : status.charAt(0).toUpperCase() + status.slice(1)}`);
+        const label = status === "no_site" ? "No Site" : status === "overtime" ? `OT: ${overtimeHours || 0}h` : status.charAt(0).toUpperCase() + status.slice(1);
+        toast.success(`Marked ${label}`);
       } else {
         toast.error("Failed to update attendance");
       }
       setOpenDay(null);
       setDropdownPos(null);
+      setShowOvertimeInput(false);
+      setOvertimeInput("");
       onAttendanceChange();
     } catch {
       toast.error("Failed to update attendance");
@@ -700,10 +725,11 @@ function EmployeeRow({
   };
 
   // Attendance status visual helper
-  const getStatusStyle = (status: string | null | undefined, isToday: boolean) => {
+  const getStatusStyle = (status: string | null | undefined, isToday: boolean, overtimeHours?: number) => {
     if (status === "present") return { bg: "bg-emerald-500", text: "text-white", icon: <CheckCircle2 className="h-4 w-4" />, label: "Present" };
     if (status === "absent") return { bg: "bg-red-500", text: "text-white", icon: <XCircle className="h-4 w-4" />, label: "Absent" };
     if (status === "no_site") return { bg: "bg-gray-400", text: "text-white", icon: <MinusCircle className="h-4 w-4" />, label: "No Site" };
+    if (status === "overtime") return { bg: "bg-blue-500", text: "text-white", icon: <Clock className="h-4 w-4" />, label: `OT: ${overtimeHours || 0}h` };
     if (isToday) return { bg: "bg-red-500", text: "text-white", icon: <XCircle className="h-4 w-4" />, label: "Absent" };
     return { bg: "bg-gray-300 dark:bg-gray-600", text: "text-white", icon: <MinusCircle className="h-4 w-4" />, label: "—" };
   };
@@ -783,6 +809,55 @@ function EmployeeRow({
                 {effectiveStatus === opt.status && <span className="ml-auto text-[9px] opacity-80">✓</span>}
               </button>
             ))}
+            {/* Overtime option */}
+            {!showOvertimeInput ? (
+              <button
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 transition-colors ${effectiveStatus === "overtime" ? "ring-2 ring-offset-1 ring-white/70 dark:ring-offset-slate-800" : ""}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowOvertimeInput(true);
+                }}
+              >
+                <Clock className="h-3.5 w-3.5" />
+                Overtime
+                {effectiveStatus === "overtime" && <span className="ml-auto text-[9px] opacity-80">✓</span>}
+              </button>
+            ) : (
+              <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min="0.5"
+                    max="24"
+                    step="0.5"
+                    placeholder="Hrs"
+                    value={overtimeInput}
+                    onChange={(e) => setOvertimeInput(e.target.value)}
+                    className="w-full px-2 py-1.5 text-xs rounded-md border border-border bg-background"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && overtimeInput) {
+                        markAttendance(openDay, "overtime", parseFloat(overtimeInput));
+                      }
+                    }}
+                  />
+                  <span className="text-[10px] text-muted-foreground">hrs</span>
+                </div>
+                <button
+                  className="w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                  onClick={() => {
+                    if (overtimeInput && parseFloat(overtimeInput) > 0) {
+                      markAttendance(openDay, "overtime", parseFloat(overtimeInput));
+                    } else {
+                      toast.error("Enter overtime hours");
+                    }
+                  }}
+                >
+                  <Clock className="h-3 w-3" />
+                  Confirm OT
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>,
@@ -823,7 +898,7 @@ function EmployeeRow({
               const att = getAttendanceForDay(daysAgo);
               const isToday = daysAgo === 0;
               const effectiveStatus = att?.status || (isToday ? "absent" : null);
-              const style = getStatusStyle(effectiveStatus, isToday);
+              const style = getStatusStyle(effectiveStatus, isToday, (att as any)?.overtimeHours);
 
               return (
                 <div key={daysAgo}>
@@ -966,6 +1041,11 @@ function DashboardView() {
     return todayAtt?.status === "no_site";
   }).length;
 
+  const overtimeToday = employees.filter((e) => {
+    const todayAtt = e.attendances?.find((a) => a.date === todayStr);
+    return todayAtt?.status === "overtime";
+  }).length;
+
   return (
     <div className="space-y-6">
       {/* Page header */}
@@ -989,12 +1069,13 @@ function DashboardView() {
       </div>
 
       {/* Stats cards */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-5 gap-3">
         {[
           { label: "Total Employees", value: employees.length, icon: Users, bgClass: "bg-emerald-100 dark:bg-emerald-900/30", iconClass: "text-emerald-600 dark:text-emerald-400" },
           { label: "Present Today", value: presentToday, icon: CheckCircle2, bgClass: "bg-green-100 dark:bg-green-900/30", iconClass: "text-green-600 dark:text-green-400" },
           { label: "Absent Today", value: absentToday, icon: XCircle, bgClass: "bg-red-100 dark:bg-red-900/30", iconClass: "text-red-600 dark:text-red-400" },
           { label: "No Site Today", value: noSiteToday, icon: MinusCircle, bgClass: "bg-gray-100 dark:bg-gray-800/30", iconClass: "text-gray-600 dark:text-gray-400" },
+          { label: "Overtime Today", value: overtimeToday, icon: Clock, bgClass: "bg-blue-100 dark:bg-blue-900/30", iconClass: "text-blue-600 dark:text-blue-400" },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}
@@ -1195,10 +1276,12 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1); // 1-12
-  const [attendanceMap, setAttendanceMap] = useState<Record<string, { status: string; id: string; dayName: string }>>({});
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, { status: string; id: string; dayName: string; overtimeHours?: number }>>({});
   const [editMode, setEditMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [activeDay, setActiveDay] = useState<string | null>(null);
+  const [overtimeInput, setOvertimeInput] = useState<string>("");
+  const [showOvertimeInput, setShowOvertimeInput] = useState(false);
 
   // Generate year options (5 years back + current year)
   const yearOptions = useMemo(() => {
@@ -1216,9 +1299,9 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
       );
       if (res.ok) {
         const data = await res.json();
-        const map: Record<string, { status: string; id: string; dayName: string }> = {};
+        const map: Record<string, { status: string; id: string; dayName: string; overtimeHours?: number }> = {};
         data.forEach((a: any) => {
-          map[a.date] = { status: a.status, id: a.id, dayName: a.dayName || "" };
+          map[a.date] = { status: a.status, id: a.id, dayName: a.dayName || "", overtimeHours: a.overtimeHours || undefined };
         });
         setAttendanceMap(map);
       }
@@ -1235,7 +1318,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
 
   // Build calendar grid for the selected month/year
   const calendarDays = useMemo(() => {
-    const days: { day: number; dateStr: string; dayName: string; status: string | null; attendanceId: string | null; isCurrentMonth: boolean }[] = [];
+    const days: { day: number; dateStr: string; dayName: string; status: string | null; attendanceId: string | null; isCurrentMonth: boolean; overtimeHours?: number }[] = [];
     const firstDay = new Date(selectedYear, selectedMonth - 1, 1);
     const lastDay = new Date(selectedYear, selectedMonth, 0);
     const totalDays = lastDay.getDate();
@@ -1266,6 +1349,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
         status: att?.status || null,
         attendanceId: att?.id || null,
         isCurrentMonth: true,
+        overtimeHours: att?.overtimeHours,
       });
     }
 
@@ -1283,11 +1367,13 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
     return days;
   }, [selectedYear, selectedMonth, attendanceMap]);
 
-  // Count present/absent/no_site/unmarked for current month
+  // Count present/absent/no_site/overtime/unmarked for current month
   const monthStats = useMemo(() => {
     let present = 0;
     let absent = 0;
     let noSite = 0;
+    let overtime = 0;
+    let totalOvertimeHours = 0;
     let unmarked = 0;
     const totalDays = new Date(selectedYear, selectedMonth, 0).getDate();
     for (let d = 1; d <= totalDays; d++) {
@@ -1299,13 +1385,14 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
       else if (att.status === "present") present++;
       else if (att.status === "absent") absent++;
       else if (att.status === "no_site") noSite++;
+      else if (att.status === "overtime") { overtime++; totalOvertimeHours += (att.overtimeHours || 0); }
       else unmarked++;
     }
-    return { present, absent, noSite, unmarked };
+    return { present, absent, noSite, overtime, totalOvertimeHours, unmarked };
   }, [selectedYear, selectedMonth, attendanceMap]);
 
   // Handle marking attendance on a day
-  const handleMarkAttendance = async (dateStr: string, dayName: string, status: string) => {
+  const handleMarkAttendance = async (dateStr: string, dayName: string, status: string, overtimeHours?: number) => {
     try {
       await fetch("/api/attendance", {
         method: "POST",
@@ -1316,9 +1403,12 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
           dayName,
           status,
           markedBy: user?.name || "System",
+          overtimeHours: status === "overtime" ? overtimeHours || 0 : undefined,
         }),
       });
       setActiveDay(null);
+      setShowOvertimeInput(false);
+      setOvertimeInput("");
       fetchAttendance();
     } catch {
       toast.error("Failed to update attendance");
@@ -1392,6 +1482,10 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
             No Site: {monthStats.noSite}
           </span>
           <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-blue-500 inline-block" />
+            OT: {monthStats.overtime} ({monthStats.totalOvertimeHours}h)
+          </span>
+          <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-sm bg-white dark:bg-slate-600 inline-block border border-gray-300 dark:border-slate-500" />
             Unmarked: {monthStats.unmarked}
           </span>
@@ -1416,6 +1510,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
             const isPresent = dayInfo.status === "present";
             const isAbsent = dayInfo.status === "absent";
             const isNoSite = dayInfo.status === "no_site";
+            const isOvertime = dayInfo.status === "overtime";
             const isUnmarked = !dayInfo.status && dayInfo.isCurrentMonth;
             const isActive = activeDay === dayInfo.dateStr;
 
@@ -1434,6 +1529,9 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
             } else if (isNoSite) {
               cellBg = "bg-gray-100 dark:bg-slate-700/50 print:bg-gray-100";
               dayNumColor = "text-gray-600 dark:text-gray-400 print:text-gray-600";
+            } else if (isOvertime) {
+              cellBg = "bg-blue-50 dark:bg-blue-950/30 print:bg-blue-50";
+              dayNumColor = "text-blue-700 dark:text-blue-400 print:text-blue-700";
             } else {
               cellBg = "bg-white dark:bg-slate-800 print:bg-white";
               dayNumColor = "text-gray-700 dark:text-gray-300 print:text-gray-700";
@@ -1444,6 +1542,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
             if (dayInfo.isCurrentMonth && isPresent) accentColor = "bg-emerald-500";
             else if (dayInfo.isCurrentMonth && isAbsent) accentColor = "bg-red-500";
             else if (dayInfo.isCurrentMonth && isNoSite) accentColor = "bg-gray-400";
+            else if (dayInfo.isCurrentMonth && isOvertime) accentColor = "bg-blue-500";
 
             return (
               <div
@@ -1493,10 +1592,16 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
                     <span className="text-[8px] text-gray-500 dark:text-gray-400 font-medium">NS</span>
                   </div>
                 )}
+                {dayInfo.isCurrentMonth && isOvertime && (
+                  <div className="pl-1.5 mt-0.5 flex items-center gap-1">
+                    <Clock className="h-3 w-3 text-blue-500 dark:text-blue-400" />
+                    <span className="text-[8px] text-blue-600 dark:text-blue-400 font-medium">OT: {dayInfo.overtimeHours || 0}h</span>
+                  </div>
+                )}
 
                 {/* Edit mode: option popup for this day */}
                 {editMode && isActive && dayInfo.isCurrentMonth && (
-                  <div className="absolute z-30 left-1/2 -translate-x-1/2 top-full mt-0.5 bg-white dark:bg-slate-700 rounded-lg shadow-xl border border-gray-200 dark:border-slate-600 p-2 w-[130px]">
+                  <div className="absolute z-30 left-1/2 -translate-x-1/2 top-full mt-0.5 bg-white dark:bg-slate-700 rounded-lg shadow-xl border border-gray-200 dark:border-slate-600 p-2 w-[150px]">
                     <p className="text-[9px] text-gray-400 dark:text-gray-500 font-medium px-1 pb-1.5 border-b border-gray-100 dark:border-slate-600 mb-2">
                       {dayInfo.dayName}, {dayInfo.dateStr}
                     </p>
@@ -1517,6 +1622,54 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
                         {opt.label}
                       </button>
                     ))}
+                    {/* Overtime option */}
+                    {!showOvertimeInput ? (
+                      <button
+                        className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-[11px] font-medium text-white bg-blue-500 hover:bg-blue-600 transition-colors my-1 ${dayInfo.status === "overtime" ? "ring-2 ring-offset-1 ring-white/70 dark:ring-offset-slate-700" : ""}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowOvertimeInput(true);
+                        }}
+                      >
+                        <Clock className="h-3 w-3" />
+                        Overtime
+                      </button>
+                    ) : (
+                      <div className="space-y-1.5 my-1" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0.5"
+                            max="24"
+                            step="0.5"
+                            placeholder="Hrs"
+                            value={overtimeInput}
+                            onChange={(e) => setOvertimeInput(e.target.value)}
+                            className="w-full px-2 py-1.5 text-[11px] rounded-md border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && overtimeInput) {
+                                handleMarkAttendance(dayInfo.dateStr, dayInfo.dayName, "overtime", parseFloat(overtimeInput));
+                              }
+                            }}
+                          />
+                          <span className="text-[9px] text-muted-foreground">hrs</span>
+                        </div>
+                        <button
+                          className="w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                          onClick={() => {
+                            if (overtimeInput && parseFloat(overtimeInput) > 0) {
+                              handleMarkAttendance(dayInfo.dateStr, dayInfo.dayName, "overtime", parseFloat(overtimeInput));
+                            } else {
+                              toast.error("Enter overtime hours");
+                            }
+                          }}
+                        >
+                          <Clock className="h-3 w-3" />
+                          Confirm OT
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1527,7 +1680,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
 
       {editMode && (
         <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2 italic">
-          Click on any date to mark attendance: Present (green), Absent (red), or No Site (grey)
+          Click on any date to mark attendance: Present (green), Absent (red), No Site (grey), or Overtime (blue)
         </p>
       )}
     </div>
@@ -1539,7 +1692,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
 // ============================================================
 
 function EmployeeDetailView() {
-  const { selectedEmployeeId, setView, user, pendingDeleteRequestId, pendingDeleteEmployeeId, setPendingDeleteRequest } = useAppStore();
+  const { selectedEmployeeId, setView, user, pendingDeleteRequestId, pendingDeleteEmployeeId, setPendingDeleteRequest, activeDeleteRequestId, activeDeleteReason, setActiveDeleteRequest } = useAppStore();
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -1549,8 +1702,11 @@ function EmployeeDetailView() {
 
   // Determine if we're in "review delete request" mode (Super Admin came from notification)
   const isReviewingDelete = user?.role === "super_admin" &&
-    !!pendingDeleteRequestId &&
-    pendingDeleteEmployeeId === selectedEmployeeId;
+    (!!pendingDeleteRequestId && pendingDeleteEmployeeId === selectedEmployeeId ||
+     !!activeDeleteRequestId);
+
+  // Get the deletion reason from either source
+  const deletionReason = activeDeleteReason || null;
 
   useEffect(() => {
     if (!selectedEmployeeId) return;
@@ -1565,6 +1721,22 @@ function EmployeeDetailView() {
         setLoading(false);
       });
   }, [selectedEmployeeId]);
+
+  // Also check for pending delete requests for this employee (for super admin)
+  useEffect(() => {
+    if (user?.role !== "super_admin" || !selectedEmployeeId || activeDeleteRequestId) return;
+    fetch(`/api/delete-requests?status=pending`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          const pendingReq = data.find((req: DeleteRequestItem) => req.employeeId === selectedEmployeeId);
+          if (pendingReq) {
+            setActiveDeleteRequest(pendingReq.id, pendingReq.reason || null);
+          }
+        }
+      })
+      .catch(() => {});
+  }, [selectedEmployeeId, user?.role, activeDeleteRequestId]);
 
   const handlePrint = () => {
     window.print();
@@ -1648,13 +1820,14 @@ function EmployeeDetailView() {
       <div className="flex items-center justify-between no-print">
         <Button variant="ghost" onClick={() => {
           setPendingDeleteRequest(null, null);
+          setActiveDeleteRequest(null, null);
           setView("dashboard");
         }} className="gap-2">
           <ChevronLeft className="h-4 w-4" />
           Back
         </Button>
         {isReviewingDelete ? (
-          /* Super Admin reviewing a delete request — show Confirm Delete + Reject */
+          /* Super Admin reviewing a delete request — show Accept Deletion + Reject Deletion */
           <div className="flex gap-2">
             <Button
               variant="outline"
@@ -1677,7 +1850,9 @@ function EmployeeDetailView() {
               size="sm"
               disabled={deleting}
               onClick={async () => {
-                if (!employee || !pendingDeleteRequestId) return;
+                if (!employee) return;
+                const requestId = pendingDeleteRequestId || activeDeleteRequestId;
+                if (!requestId) return;
                 setDeleting(true);
                 try {
                   // Approve the delete request → soft-delete employee
@@ -1685,7 +1860,7 @@ function EmployeeDetailView() {
                     method: "PUT",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                      id: pendingDeleteRequestId,
+                      id: requestId,
                       status: "approved",
                       reviewedBy: user?.id,
                     }),
@@ -1693,6 +1868,7 @@ function EmployeeDetailView() {
                   if (res.ok) {
                     toast.success(`"${employee.fullName}" has been deleted`);
                     setPendingDeleteRequest(null, null);
+                    setActiveDeleteRequest(null, null);
                     setView("dashboard");
                   } else {
                     toast.error("Failed to confirm deletion");
@@ -1705,21 +1881,22 @@ function EmployeeDetailView() {
               }}
             >
               {deleting ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
-              Confirm Delete
+              Accept Deletion
             </Button>
             <Button
               variant="outline"
               size="sm"
               disabled={deleting}
               onClick={async () => {
-                if (!pendingDeleteRequestId) return;
+                const requestId = pendingDeleteRequestId || activeDeleteRequestId;
+                if (!requestId) return;
                 setDeleting(true);
                 try {
                   const res = await fetch("/api/delete-requests", {
                     method: "PUT",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                      id: pendingDeleteRequestId,
+                      id: requestId,
                       status: "rejected",
                       reviewedBy: user?.id,
                     }),
@@ -1727,6 +1904,7 @@ function EmployeeDetailView() {
                   if (res.ok) {
                     toast.success("Deletion request rejected");
                     setPendingDeleteRequest(null, null);
+                    setActiveDeleteRequest(null, null);
                     setView("dashboard");
                   } else {
                     toast.error("Failed to reject request");
@@ -1739,7 +1917,7 @@ function EmployeeDetailView() {
               }}
             >
               <XCircle className="h-4 w-4 mr-1" />
-              Reject
+              Reject Deletion
             </Button>
           </div>
         ) : (
@@ -1871,6 +2049,29 @@ function EmployeeDetailView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Deletion Request Banner (only for super admin reviewing) */}
+      {isReviewingDelete && (deletionReason || activeDeleteRequestId) && (
+        <div className="no-print bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-300 dark:border-amber-800 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center flex-shrink-0">
+              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-bold text-amber-800 dark:text-amber-300">Pending Deletion Request</h3>
+              <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">
+                A deletion request has been submitted for this employee.
+              </p>
+              {deletionReason && (
+                <div className="mt-2 p-2.5 bg-white dark:bg-slate-800 rounded-lg border border-amber-200 dark:border-amber-800">
+                  <p className="text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-500 font-semibold mb-1">Reason for Deletion</p>
+                  <p className="text-sm text-gray-800 dark:text-gray-200">{deletionReason}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* CV Content */}
       <div ref={printRef} className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden text-gray-900 dark:text-gray-100 print:bg-white print:text-gray-900">
@@ -2021,7 +2222,7 @@ function EmployeeFormView() {
     companyName: "",
     passportStatus: "",
     idStatus: "",
-    rating: 3,
+    rating: 5.0,
     emergencyContact: "",
     address: "",
     photoUrl: "" as string | null,
@@ -2047,7 +2248,7 @@ function EmployeeFormView() {
             companyName: data.companyName || "",
             passportStatus: data.passportStatus || "",
             idStatus: data.idStatus || "",
-            rating: data.rating || 3,
+            rating: data.rating || 5.0,
             emergencyContact: data.emergencyContact || "",
             address: data.address || "",
             photoUrl: data.photoUrl || null,
@@ -2457,21 +2658,23 @@ function EmployeeFormView() {
                 </Select>
               </div>
 
-              {/* Rating — spans full width */}
+              {/* Rating — auto-calculated, display only */}
               <div className="space-y-1.5 md:col-span-2">
                 <Label className="flex items-center gap-1.5 text-xs">
                   <Star className="h-3.5 w-3.5 text-amber-500" />
-                  Rating
+                  Rating (Auto-calculated)
                 </Label>
                 <div className="flex items-center gap-3">
                   <StarRating
                     rating={formData.rating}
                     size={24}
-                    interactive
-                    onChange={(r) => updateField("rating", r)}
+                    interactive={false}
                   />
                   <span className="text-sm font-semibold text-muted-foreground">
-                    {formData.rating}/5
+                    {formData.rating.toFixed(1)}/5.0
+                  </span>
+                  <span className="text-[10px] text-muted-foreground italic">
+                    Rating is automatically calculated based on attendance, warnings, fines, and overtime
                   </span>
                 </div>
               </div>
@@ -2632,6 +2835,105 @@ function SearchableEmployeeDropdown({
       )}
     </div>
   );
+}
+
+// ============================================================
+// WHATSAPP & DOWNLOAD HELPERS FOR NOTICES
+// ============================================================
+
+function sendToWhatsApp(phone: string | null, message: string) {
+  if (!phone) {
+    toast.error("No phone number available for this employee");
+    return;
+  }
+  // Clean phone number - remove spaces, dashes, etc.
+  const cleanPhone = phone.replace(/[\s\-()]/g, "");
+  // Ensure it starts with country code
+  const formattedPhone = cleanPhone.startsWith("+") ? cleanPhone.slice(1) : cleanPhone.startsWith("00") ? cleanPhone.slice(2) : cleanPhone;
+  const encodedMessage = encodeURIComponent(message);
+  const url = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
+  window.open(url, "_blank");
+  toast.success("Opening WhatsApp...");
+}
+
+async function downloadNoticeAsPDF(
+  elementId: string,
+  filename: string,
+  isDarkMode: boolean
+) {
+  try {
+    toast.info("Generating PDF...");
+    const card = document.getElementById(elementId);
+    if (!card) {
+      toast.error("Notice element not found");
+      return;
+    }
+
+    // Temporarily remove dark mode for clean PDF
+    const htmlEl = document.documentElement;
+    const hadDarkClass = htmlEl.classList.contains("dark");
+    if (hadDarkClass) htmlEl.classList.remove("dark");
+
+    // Wait a tick for styles to re-render
+    await new Promise((r) => setTimeout(r, 150));
+
+    const html2canvas = (await import("html2canvas")).default;
+    const jsPDF = (await import("jspdf")).default;
+    const canvas = await html2canvas(card, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+    });
+
+    // Restore dark mode
+    if (hadDarkClass) htmlEl.classList.add("dark");
+
+    const imgData = canvas.toDataURL("image/png");
+    const pdf = new jsPDF("p", "mm", "a4");
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+    pdf.save(filename);
+    toast.success("PDF downloaded successfully");
+  } catch {
+    // Restore dark mode on error
+    const htmlEl = document.documentElement;
+    if (!htmlEl.classList.contains("dark") && isDarkMode) {
+      htmlEl.classList.add("dark");
+    }
+    toast.error("Failed to generate PDF");
+  }
+}
+
+function generateWarningMessage(warning: WarningItem) {
+  return `⚠️ WARNING NOTICE\n\n` +
+    `Arabian Shield Manpower\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `Employee Name: ${warning.employeeName}\n` +
+    `Employee ID: ${warning.employee?.employeeId || warning.employeeId}\n` +
+    `Position: ${warning.employee?.position || "—"}\n` +
+    `Company: ${warning.employee?.companyName || "—"}\n\n` +
+    `Reason: ${warning.reason}\n` +
+    `${warning.isAutoGenerated ? "(Auto-generated: 3 consecutive absences)\n" : ""}` +
+    `${warning.absentDates ? `Absent Dates: ${warning.absentDates}\n` : ""}` +
+    `Date of Issue: ${formatDateTime(warning.createdAt)}\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `This is an official warning from Arabian Shield Manpower.`;
+}
+
+function generateFineMessage(fine: FineItem) {
+  return `💰 FINE NOTICE\n\n` +
+    `Arabian Shield Manpower\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `Employee Name: ${fine.employeeName}\n` +
+    `Employee ID: ${fine.employee?.employeeId || fine.employeeId}\n` +
+    `Position: ${fine.employee?.position || "—"}\n` +
+    `Company: ${fine.employee?.companyName || "—"}\n\n` +
+    `Reason: ${fine.reason}\n` +
+    `Fine Amount: ${fine.amount.toLocaleString("en-SA", { minimumFractionDigits: 2 })} SAR\n` +
+    `Date of Issue: ${formatDateTime(fine.createdAt)}\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `This is an official fine notice from Arabian Shield Manpower.`;
 }
 
 // ============================================================
@@ -3054,6 +3356,19 @@ function NotificationsView() {
                               <div className="flex gap-2">
                                 <Button
                                   size="sm"
+                                  variant="outline"
+                                  className="text-emerald-700 border-emerald-300 hover:bg-emerald-50 dark:text-emerald-400 dark:border-emerald-800"
+                                  onClick={() => {
+                                    setSelectedEmployee(req.employeeId);
+                                    setPendingDeleteRequest(req.id, req.employeeId);
+                                    setView("employee-detail");
+                                  }}
+                                >
+                                  <Eye className="h-3.5 w-3.5 mr-1" />
+                                  View Employee
+                                </Button>
+                                <Button
+                                  size="sm"
                                   variant="destructive"
                                   onClick={() => handleDeleteRequestAction(req.id, "approved")}
                                 >
@@ -3194,7 +3509,7 @@ function NotificationsView() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, x: -100 }}
                       >
-                        <Card className={`border-2 overflow-hidden transition-all duration-500 ${
+                        <Card id={`warning-notice-${warning.id}`} className={`border-2 overflow-hidden transition-all duration-500 ${
                           isHighlighted
                             ? "border-amber-500 shadow-lg shadow-amber-500/20"
                             : !warning.read
@@ -3290,6 +3605,29 @@ function NotificationsView() {
                                         Mark as Read
                                       </Button>
                                     )}
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-green-700 border-green-300 hover:bg-green-50 dark:text-green-400 dark:border-green-800 dark:hover:bg-green-950/20"
+                                      onClick={() => sendToWhatsApp(warning.employee?.phone || null, generateWarningMessage(warning))}
+                                      title="Send via WhatsApp"
+                                    >
+                                      <MessageCircle className="h-3.5 w-3.5 mr-1" />
+                                      WhatsApp
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => downloadNoticeAsPDF(
+                                        `warning-notice-${warning.id}`,
+                                        `Warning_${warning.employeeName.replace(/\s+/g, "_")}.pdf`,
+                                        useAppStore.getState().darkMode
+                                      )}
+                                      title="Download as PDF (white background)"
+                                    >
+                                      <Download className="h-3.5 w-3.5 mr-1" />
+                                      Download
+                                    </Button>
                                     <Button
                                       size="sm"
                                       variant="ghost"
@@ -3443,7 +3781,7 @@ function NotificationsView() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, x: -100 }}
                       >
-                        <Card className={`border-2 overflow-hidden transition-all duration-500 ${
+                        <Card id={`fine-notice-${fine.id}`} className={`border-2 overflow-hidden transition-all duration-500 ${
                           isHighlighted
                             ? "border-red-500 shadow-lg shadow-red-500/20"
                             : !fine.read
@@ -3523,6 +3861,29 @@ function NotificationsView() {
                                         Mark as Read
                                       </Button>
                                     )}
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-green-700 border-green-300 hover:bg-green-50 dark:text-green-400 dark:border-green-800 dark:hover:bg-green-950/20"
+                                      onClick={() => sendToWhatsApp(fine.employee?.phone || null, generateFineMessage(fine))}
+                                      title="Send via WhatsApp"
+                                    >
+                                      <MessageCircle className="h-3.5 w-3.5 mr-1" />
+                                      WhatsApp
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => downloadNoticeAsPDF(
+                                        `fine-notice-${fine.id}`,
+                                        `Fine_${fine.employeeName.replace(/\s+/g, "_")}.pdf`,
+                                        useAppStore.getState().darkMode
+                                      )}
+                                      title="Download as PDF (white background)"
+                                    >
+                                      <Download className="h-3.5 w-3.5 mr-1" />
+                                      Download
+                                    </Button>
                                     <Button
                                       size="sm"
                                       variant="ghost"
@@ -3664,19 +4025,25 @@ function NotificationPopups() {
     setNotificationsTab,
     setHighlightWarning,
     setHighlightFine,
+    setSelectedEmployee,
+    setPendingDeleteRequest,
   } = useAppStore();
 
   const isSuperAdmin = user?.role === "super_admin";
 
-  // Poll for unread warnings and fines every 15 seconds
+  // Delete request popups state
+  const [popupDeleteRequests, setPopupDeleteRequests] = useState<DeleteRequestItem[]>([]);
+
+  // Poll for unread warnings and fines + pending delete requests every 15 seconds
   useEffect(() => {
     if (!isSuperAdmin) return;
 
     const fetchUnread = async () => {
       try {
-        const [warnRes, fineRes] = await Promise.all([
+        const [warnRes, fineRes, reqRes] = await Promise.all([
           fetch("/api/warnings?read=false"),
           fetch("/api/fines?read=false"),
+          fetch("/api/delete-requests?status=pending"),
         ]);
 
         if (warnRes.ok) {
@@ -3690,6 +4057,13 @@ function NotificationPopups() {
           const fineData = await fineRes.json();
           if (Array.isArray(fineData)) {
             setPopupFines(fineData);
+          }
+        }
+
+        if (reqRes.ok) {
+          const reqData = await reqRes.json();
+          if (Array.isArray(reqData)) {
+            setPopupDeleteRequests(reqData);
           }
         }
       } catch {
@@ -3708,6 +4082,7 @@ function NotificationPopups() {
   if (!isSuperAdmin) return null;
 
   const allPopups = [
+    ...popupDeleteRequests.map((r) => ({ ...r, type: "request" as const })),
     ...popupWarnings.map((w) => ({ ...w, type: "warning" as const })),
     ...popupFines.map((f) => ({ ...f, type: "fine" as const })),
   ];
@@ -3727,29 +4102,41 @@ function NotificationPopups() {
             className="pointer-events-auto"
           >
             <div className={`rounded-xl shadow-2xl border-2 overflow-hidden ${
-              item.type === "warning"
+              item.type === "request"
+                ? "bg-amber-50 dark:bg-amber-950/90 border-amber-400 dark:border-amber-700"
+                : item.type === "warning"
                 ? "bg-amber-50 dark:bg-amber-950/90 border-amber-400 dark:border-amber-700"
                 : "bg-red-50 dark:bg-red-950/90 border-red-400 dark:border-red-700"
             }`}>
               {/* Popup Header */}
               <div className={`px-4 py-2.5 flex items-center gap-2 ${
-                item.type === "warning"
+                item.type === "request"
+                  ? "bg-gradient-to-r from-amber-500 to-amber-600 text-white"
+                  : item.type === "warning"
                   ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white"
                   : "bg-gradient-to-r from-red-500 to-rose-500 text-white"
               }`}>
-                {item.type === "warning" ? (
+                {item.type === "request" ? (
+                  <Shield className="h-4 w-4 flex-shrink-0" />
+                ) : item.type === "warning" ? (
                   <AlertTriangle className="h-4 w-4 flex-shrink-0" />
                 ) : (
                   <DollarSign className="h-4 w-4 flex-shrink-0" />
                 )}
                 <span className="text-xs font-bold tracking-wider uppercase">
-                  {item.type === "warning" ? "New Warning" : "New Fine"}
+                  {item.type === "request" ? "Delete Request" : item.type === "warning" ? "New Warning" : "New Fine"}
                 </span>
               </div>
               {/* Popup Body */}
               <div className="px-4 py-3">
-                <p className="text-sm font-semibold truncate">{item.employeeName}</p>
-                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{item.reason}</p>
+                <p className="text-sm font-semibold truncate">
+                  {item.type === "request" ? (item as DeleteRequestItem).employeeName : (item as WarningItem | FineItem).employeeName}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                  {item.type === "request"
+                    ? `Deletion requested${(item as DeleteRequestItem).reason ? `: ${(item as DeleteRequestItem).reason}` : ""}`
+                    : (item as WarningItem | FineItem).reason}
+                </p>
                 {item.type === "fine" && (
                   <p className="text-sm font-bold text-red-700 dark:text-red-400 mt-1">
                     {(item as FineItem).amount.toLocaleString("en-SA", { minimumFractionDigits: 2 })} SAR
@@ -3759,16 +4146,24 @@ function NotificationPopups() {
                   <Button
                     size="sm"
                     className={`text-xs h-7 ${
-                      item.type === "warning"
+                      item.type === "request"
+                        ? "bg-amber-600 hover:bg-amber-700 text-white"
+                        : item.type === "warning"
                         ? "bg-amber-600 hover:bg-amber-700 text-white"
                         : "bg-red-600 hover:bg-red-700 text-white"
                     }`}
                     onClick={() => {
-                      setView("notifications");
-                      if (item.type === "warning") {
+                      if (item.type === "request") {
+                        const req = item as DeleteRequestItem;
+                        setSelectedEmployee(req.employeeId);
+                        setPendingDeleteRequest(req.id, req.employeeId);
+                        setView("employee-detail");
+                      } else if (item.type === "warning") {
+                        setView("notifications");
                         setNotificationsTab("warnings");
                         setHighlightWarning(item.id);
                       } else {
+                        setView("notifications");
                         setNotificationsTab("fines");
                         setHighlightFine(item.id);
                       }
@@ -3781,20 +4176,26 @@ function NotificationPopups() {
                     variant="ghost"
                     className="text-xs h-7"
                     onClick={async () => {
-                      const endpoint = item.type === "warning" ? "/api/warnings" : "/api/fines";
-                      try {
-                        await fetch(endpoint, {
-                          method: "PUT",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ id: item.id, read: true }),
-                        });
-                        if (item.type === "warning") {
+                      if (item.type === "request") {
+                        setPopupDeleteRequests(popupDeleteRequests.filter((r) => r.id !== item.id));
+                      } else if (item.type === "warning") {
+                        try {
+                          await fetch("/api/warnings", {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ id: item.id, read: true }),
+                          });
                           setPopupWarnings(popupWarnings.filter((w) => w.id !== item.id));
-                        } else {
+                        } catch {}
+                      } else {
+                        try {
+                          await fetch("/api/fines", {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ id: item.id, read: true }),
+                          });
                           setPopupFines(popupFines.filter((f) => f.id !== item.id));
-                        }
-                      } catch {
-                        // Silently fail
+                        } catch {}
                       }
                     }}
                   >
