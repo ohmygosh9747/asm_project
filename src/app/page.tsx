@@ -41,6 +41,7 @@ import {
   Camera,
   Eye,
   Trash2,
+  MinusCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,6 +69,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 
 // ============================================================
@@ -658,20 +660,15 @@ function EmployeeRow({
   onAttendanceChange: () => void;
 }) {
   const { setView, setSelectedEmployee, user } = useAppStore();
+  const [openPopover, setOpenPopover] = useState<number | null>(null);
 
   const getAttendanceForDay = (daysAgo: number): Attendance | undefined => {
     const dateStr = getDateStr(daysAgo);
     return employee.attendances?.find((a) => a.date === dateStr);
   };
 
-  const handleAttendanceClick = async (daysAgo: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const current = getAttendanceForDay(daysAgo);
-    // Match visual default: today defaults to absent if no record, other days default to present
-    const visualStatus = current?.status || (daysAgo === 0 ? "absent" : "present");
-    const nextStatus = visualStatus === "present" ? "absent" : "present";
+  const markAttendance = async (daysAgo: number, status: string) => {
     const dateStr = getDateStr(daysAgo);
-
     try {
       await fetch("/api/attendance", {
         method: "POST",
@@ -680,14 +677,25 @@ function EmployeeRow({
           employeeId: employee.id,
           date: dateStr,
           dayName: getDayNameFromDateStr(dateStr),
-          status: nextStatus,
+          status,
           markedBy: user?.name || "System",
         }),
       });
+      setOpenPopover(null);
       onAttendanceChange();
     } catch {
       toast.error("Failed to update attendance");
     }
+  };
+
+  // Attendance status visual helper
+  const getStatusStyle = (status: string | null | undefined, isToday: boolean) => {
+    if (status === "present") return { bg: "bg-emerald-500", text: "text-white", icon: <CheckCircle2 className="h-4 w-4" />, label: "Present" };
+    if (status === "absent") return { bg: "bg-red-500", text: "text-white", icon: <XCircle className="h-4 w-4" />, label: "Absent" };
+    if (status === "no_site") return { bg: "bg-gray-400", text: "text-white", icon: <MinusCircle className="h-4 w-4" />, label: "No Site" };
+    // No record — today defaults to absent visually, other days show grey/unmarked
+    if (isToday) return { bg: "bg-red-500", text: "text-white", icon: <XCircle className="h-4 w-4" />, label: "Absent" };
+    return { bg: "bg-gray-300 dark:bg-gray-600", text: "text-white", icon: <MinusCircle className="h-4 w-4" />, label: "—" };
   };
 
   return (
@@ -724,32 +732,55 @@ function EmployeeRow({
         <div className="flex items-center gap-3">
           {[0, 1, 2].map((daysAgo) => {
             const att = getAttendanceForDay(daysAgo);
-            const status = att?.status || (daysAgo === 0 ? "absent" : "present");
-            const isPresent = status === "present";
+            const isToday = daysAgo === 0;
+            // Today: default absent if no record; other days: show DB data only
+            const effectiveStatus = att?.status || (isToday ? "absent" : null);
+            const style = getStatusStyle(effectiveStatus, isToday);
+            const dateStr = getDateStr(daysAgo);
+            const dayName = getDayNameFromDateStr(dateStr);
+
             return (
-              <button
+              <Popover
                 key={daysAgo}
-                onClick={(e) => handleAttendanceClick(daysAgo, e)}
-                className="flex flex-col items-center gap-1 group"
-                title={`${getDayLabel(daysAgo)}: ${status} (click to toggle)`}
+                open={openPopover === daysAgo}
+                onOpenChange={(open) => setOpenPopover(open ? daysAgo : null)}
               >
-                <span className="text-[10px] text-muted-foreground group-hover:text-foreground transition-colors">
-                  {getDayLabel(daysAgo)}
-                </span>
-                <span
-                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer hover:scale-110 ${
-                    isPresent
-                      ? "bg-emerald-500 text-white"
-                      : "bg-red-500 text-white"
-                  }`}
-                >
-                  {isPresent ? (
-                    <CheckCircle2 className="h-4 w-4" />
-                  ) : (
-                    <XCircle className="h-4 w-4" />
-                  )}
-                </span>
-              </button>
+                <PopoverTrigger asChild>
+                  <button
+                    className="flex flex-col items-center gap-1 group"
+                    title={`${getDayLabel(daysAgo)}: ${style.label} (click to mark)`}
+                  >
+                    <span className="text-[10px] text-muted-foreground group-hover:text-foreground transition-colors">
+                      {getDayLabel(daysAgo)}
+                    </span>
+                    <span
+                      className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer hover:scale-110 ${style.bg} ${style.text}`}
+                    >
+                      {style.icon}
+                    </span>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-44 p-1.5" align="center" sideOffset={5}>
+                  <p className="text-[10px] text-muted-foreground font-medium px-2 pt-1 pb-1.5">
+                    {dayName}, {dateStr}
+                  </p>
+                  {[
+                    { status: "present", label: "Present", bg: "bg-emerald-500", icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
+                    { status: "absent", label: "Absent", bg: "bg-red-500", icon: <XCircle className="h-3.5 w-3.5" /> },
+                    { status: "no_site", label: "No Site", bg: "bg-gray-400", icon: <MinusCircle className="h-3.5 w-3.5" /> },
+                  ].map((opt) => (
+                    <button
+                      key={opt.status}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-medium text-white ${opt.bg} hover:opacity-90 transition-opacity ${effectiveStatus === opt.status ? "ring-2 ring-offset-1 ring-gray-400" : ""}`}
+                      onClick={() => markAttendance(daysAgo, opt.status)}
+                    >
+                      {opt.icon}
+                      {opt.label}
+                      {effectiveStatus === opt.status && <span className="ml-auto text-[9px] opacity-80">current</span>}
+                    </button>
+                  ))}
+                </PopoverContent>
+              </Popover>
             );
           })}
         </div>
@@ -865,6 +896,10 @@ function DashboardView() {
     const todayAtt = e.attendances?.find((a) => a.date === todayStr);
     return !todayAtt || todayAtt.status === "absent";
   }).length;
+  const noSiteToday = employees.filter((e) => {
+    const todayAtt = e.attendances?.find((a) => a.date === todayStr);
+    return todayAtt?.status === "no_site";
+  }).length;
 
   return (
     <div className="space-y-6">
@@ -889,11 +924,12 @@ function DashboardView() {
       </div>
 
       {/* Stats cards */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         {[
           { label: "Total Employees", value: employees.length, icon: Users, bgClass: "bg-emerald-100 dark:bg-emerald-900/30", iconClass: "text-emerald-600 dark:text-emerald-400" },
           { label: "Present Today", value: presentToday, icon: CheckCircle2, bgClass: "bg-green-100 dark:bg-green-900/30", iconClass: "text-green-600 dark:text-green-400" },
           { label: "Absent Today", value: absentToday, icon: XCircle, bgClass: "bg-red-100 dark:bg-red-900/30", iconClass: "text-red-600 dark:text-red-400" },
+          { label: "No Site Today", value: noSiteToday, icon: MinusCircle, bgClass: "bg-gray-100 dark:bg-gray-800/30", iconClass: "text-gray-600 dark:text-gray-400" },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}
@@ -1097,6 +1133,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
   const [attendanceMap, setAttendanceMap] = useState<Record<string, { status: string; id: string; dayName: string }>>({});
   const [editMode, setEditMode] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [activeDay, setActiveDay] = useState<string | null>(null);
 
   // Generate year options (5 years back + current year)
   const yearOptions = useMemo(() => {
@@ -1116,7 +1153,6 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
         const data = await res.json();
         const map: Record<string, { status: string; id: string; dayName: string }> = {};
         data.forEach((a: any) => {
-          // a.date is in DD-MM-YYYY format
           map[a.date] = { status: a.status, id: a.id, dayName: a.dayName || "" };
         });
         setAttendanceMap(map);
@@ -1168,7 +1204,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
       });
     }
 
-    // Next month padding to fill 6 rows
+    // Next month padding to complete the grid
     const remaining = 42 - days.length;
     for (let d = 1; d <= remaining; d++) {
       const nm = selectedMonth + 1 === 13 ? 1 : selectedMonth + 1;
@@ -1182,10 +1218,11 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
     return days;
   }, [selectedYear, selectedMonth, attendanceMap]);
 
-  // Count present/absent for current month
+  // Count present/absent/no_site/unmarked for current month
   const monthStats = useMemo(() => {
     let present = 0;
     let absent = 0;
+    let noSite = 0;
     let unmarked = 0;
     const totalDays = new Date(selectedYear, selectedMonth, 0).getDate();
     for (let d = 1; d <= totalDays; d++) {
@@ -1195,45 +1232,35 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
       const att = attendanceMap[dateStr];
       if (!att) unmarked++;
       else if (att.status === "present") present++;
-      else absent++;
+      else if (att.status === "absent") absent++;
+      else if (att.status === "no_site") noSite++;
+      else unmarked++;
     }
-    return { present, absent, unmarked };
+    return { present, absent, noSite, unmarked };
   }, [selectedYear, selectedMonth, attendanceMap]);
 
-  // Handle clicking a day in edit mode
-  const handleDayClick = async (dayInfo: typeof calendarDays[0]) => {
-    if (!editMode || !dayInfo.isCurrentMonth) return;
-
-    const currentStatus = dayInfo.status;
-    // Cycle: unmarked -> present -> absent -> present -> absent ...
-    let nextStatus: string;
-    if (!currentStatus) {
-      nextStatus = "present";
-    } else if (currentStatus === "present") {
-      nextStatus = "absent";
-    } else {
-      nextStatus = "present";
-    }
-
+  // Handle marking attendance on a day
+  const handleMarkAttendance = async (dateStr: string, dayName: string, status: string) => {
     try {
       await fetch("/api/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           employeeId,
-          date: dayInfo.dateStr,
-          dayName: dayInfo.dayName,
-          status: nextStatus,
+          date: dateStr,
+          dayName,
+          status,
           markedBy: user?.name || "System",
         }),
       });
+      setActiveDay(null);
       fetchAttendance();
     } catch {
       toast.error("Failed to update attendance");
     }
   };
 
-  // Is today in the selected month?
+  // Today's date string
   const todayStr = (() => {
     const d = new Date();
     const dd = String(d.getDate()).padStart(2, "0");
@@ -1244,16 +1271,15 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
 
   return (
     <div className="mb-2">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-[11px] font-bold tracking-[0.2em] uppercase text-emerald-600 pb-1.5 border-b-2 border-emerald-600 flex-1">
-          Attendance Record
-        </h3>
-      </div>
+      {/* Section Title */}
+      <h3 className="text-[11px] font-bold tracking-[0.2em] uppercase text-emerald-600 mb-4 pb-1.5 border-b-2 border-emerald-600">
+        Attendance Record
+      </h3>
 
-      {/* Year & Month selectors + Edit button */}
+      {/* Controls row: selectors + edit + stats */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <Select value={String(selectedYear)} onValueChange={(v) => setSelectedYear(Number(v))}>
-          <SelectTrigger className="w-[120px] h-8 text-xs">
+          <SelectTrigger className="w-[110px] h-8 text-xs">
             <SelectValue placeholder="Year" />
           </SelectTrigger>
           <SelectContent>
@@ -1263,7 +1289,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
           </SelectContent>
         </Select>
         <Select value={String(selectedMonth)} onValueChange={(v) => setSelectedMonth(Number(v))}>
-          <SelectTrigger className="w-[140px] h-8 text-xs">
+          <SelectTrigger className="w-[130px] h-8 text-xs">
             <SelectValue placeholder="Month" />
           </SelectTrigger>
           <SelectContent>
@@ -1278,83 +1304,157 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
           variant={editMode ? "default" : "outline"}
           size="sm"
           className={`h-8 text-xs gap-1.5 ${editMode ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}`}
-          onClick={() => setEditMode(!editMode)}
+          onClick={() => { setEditMode(!editMode); setActiveDay(null); }}
         >
           <Pencil className="h-3 w-3" />
-          {editMode ? "Editing..." : "Edit"}
+          {editMode ? "Done" : "Edit"}
         </Button>
 
         {loading && <RefreshCw className="h-3.5 w-3.5 animate-spin text-emerald-500" />}
 
         {/* Stats */}
-        <div className="flex items-center gap-3 ml-auto text-[10px]">
-          <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
+        <div className="flex items-center gap-4 ml-auto text-[10px] font-medium">
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block" />
             Present: {monthStats.present}
           </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block" />
             Absent: {monthStats.absent}
           </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-gray-200 inline-block border border-gray-300" />
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-gray-400 inline-block" />
+            No Site: {monthStats.noSite}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-white inline-block border border-gray-300" />
             Unmarked: {monthStats.unmarked}
           </span>
         </div>
       </div>
 
       {/* Calendar Grid */}
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
+      <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
         {/* Day headers */}
-        <div className="grid grid-cols-7 bg-gray-100">
+        <div className="grid grid-cols-7 bg-gradient-to-r from-gray-50 to-gray-100">
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-            <div key={d} className="text-center text-[10px] font-bold text-gray-500 uppercase tracking-wider py-1.5 border-b border-gray-200">
+            <div key={d} className="text-center text-[10px] font-bold text-gray-500 uppercase tracking-wider py-2 border-b border-gray-200">
               {d}
             </div>
           ))}
         </div>
 
         {/* Day cells */}
-        <div className="grid grid-cols-7">
+        <div className="grid grid-cols-7 relative">
           {calendarDays.map((dayInfo, idx) => {
             const isToday = dayInfo.dateStr === todayStr && dayInfo.isCurrentMonth;
             const isPresent = dayInfo.status === "present";
             const isAbsent = dayInfo.status === "absent";
+            const isNoSite = dayInfo.status === "no_site";
             const isUnmarked = !dayInfo.status && dayInfo.isCurrentMonth;
+            const isActive = activeDay === dayInfo.dateStr;
 
+            // Background color logic
             let cellBg = "";
-            if (!dayInfo.isCurrentMonth) cellBg = "bg-gray-50 text-gray-300";
-            else if (isPresent) cellBg = "bg-emerald-100 text-emerald-800";
-            else if (isAbsent) cellBg = "bg-red-100 text-red-800";
-            else cellBg = "bg-white text-gray-600";
+            let dayNumColor = "";
+            if (!dayInfo.isCurrentMonth) {
+              cellBg = "bg-gray-50/60";
+              dayNumColor = "text-gray-300";
+            } else if (isPresent) {
+              cellBg = "bg-emerald-50";
+              dayNumColor = "text-emerald-700";
+            } else if (isAbsent) {
+              cellBg = "bg-red-50";
+              dayNumColor = "text-red-700";
+            } else if (isNoSite) {
+              cellBg = "bg-gray-100";
+              dayNumColor = "text-gray-600";
+            } else {
+              cellBg = "bg-white";
+              dayNumColor = "text-gray-700";
+            }
+
+            // Left accent bar color
+            let accentColor = "";
+            if (dayInfo.isCurrentMonth && isPresent) accentColor = "bg-emerald-500";
+            else if (dayInfo.isCurrentMonth && isAbsent) accentColor = "bg-red-500";
+            else if (dayInfo.isCurrentMonth && isNoSite) accentColor = "bg-gray-400";
 
             return (
-              <button
+              <div
                 key={idx}
-                disabled={!editMode || !dayInfo.isCurrentMonth}
-                onClick={() => handleDayClick(dayInfo)}
                 className={`
-                  relative min-h-[52px] p-1.5 border-b border-r border-gray-100 text-left transition-all
+                  relative min-h-[60px] p-1.5 border-b border-r border-gray-100
                   ${cellBg}
-                  ${editMode && dayInfo.isCurrentMonth ? "cursor-pointer hover:ring-2 hover:ring-emerald-400 hover:z-10" : ""}
-                  ${!dayInfo.isCurrentMonth ? "cursor-default" : ""}
+                  ${editMode && dayInfo.isCurrentMonth ? "cursor-pointer" : ""}
+                  transition-colors duration-150
                 `}
-                title={
-                  dayInfo.isCurrentMonth
-                    ? `${dayInfo.dayName}, ${dayInfo.dateStr}${dayInfo.status ? ` — ${dayInfo.status}` : " — not marked"}${editMode ? " (click to toggle)" : ""}`
-                    : ""
-                }
+                onClick={() => {
+                  if (editMode && dayInfo.isCurrentMonth) {
+                    setActiveDay(activeDay === dayInfo.dateStr ? null : dayInfo.dateStr);
+                  }
+                }}
               >
-                <span className={`text-xs font-semibold block ${isToday ? "bg-emerald-600 text-white w-5 h-5 rounded-full flex items-center justify-center" : ""}`}>
-                  {dayInfo.day}
-                </span>
+                {/* Left accent bar */}
+                {accentColor && (
+                  <div className={`absolute left-0 top-1 bottom-1 w-[3px] rounded-r ${accentColor}`} />
+                )}
+
+                {/* Day number */}
+                <div className="pl-1.5">
+                  <span className={`text-[11px] font-semibold ${dayNumColor} ${
+                    isToday ? "bg-emerald-600 text-white w-5 h-5 rounded-full inline-flex items-center justify-center" : ""
+                  }`}>
+                    {dayInfo.day}
+                  </span>
+                </div>
+
+                {/* Status indicator */}
                 {dayInfo.isCurrentMonth && isPresent && (
-                  <CheckCircle2 className="h-3 w-3 text-emerald-600 mt-0.5" />
+                  <div className="pl-1.5 mt-0.5 flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                    <span className="text-[8px] text-emerald-600 font-medium">P</span>
+                  </div>
                 )}
                 {dayInfo.isCurrentMonth && isAbsent && (
-                  <XCircle className="h-3 w-3 text-red-500 mt-0.5" />
+                  <div className="pl-1.5 mt-0.5 flex items-center gap-1">
+                    <XCircle className="h-3 w-3 text-red-500" />
+                    <span className="text-[8px] text-red-600 font-medium">A</span>
+                  </div>
                 )}
-              </button>
+                {dayInfo.isCurrentMonth && isNoSite && (
+                  <div className="pl-1.5 mt-0.5 flex items-center gap-1">
+                    <MinusCircle className="h-3 w-3 text-gray-400" />
+                    <span className="text-[8px] text-gray-500 font-medium">NS</span>
+                  </div>
+                )}
+
+                {/* Edit mode: option popup for this day */}
+                {editMode && isActive && dayInfo.isCurrentMonth && (
+                  <div className="absolute z-30 left-1/2 -translate-x-1/2 top-full mt-0.5 bg-white rounded-lg shadow-xl border border-gray-200 p-1.5 w-[130px]">
+                    <p className="text-[9px] text-gray-400 font-medium px-1.5 pb-1">
+                      {dayInfo.dayName}, {dayInfo.dateStr}
+                    </p>
+                    {[
+                      { status: "present", label: "Present", bg: "bg-emerald-500", icon: <CheckCircle2 className="h-3 w-3" /> },
+                      { status: "absent", label: "Absent", bg: "bg-red-500", icon: <XCircle className="h-3 w-3" /> },
+                      { status: "no_site", label: "No Site", bg: "bg-gray-400", icon: <MinusCircle className="h-3 w-3" /> },
+                    ].map((opt) => (
+                      <button
+                        key={opt.status}
+                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[11px] font-medium text-white ${opt.bg} hover:opacity-90 transition-opacity mb-0.5 last:mb-0 ${dayInfo.status === opt.status ? "ring-2 ring-offset-1 ring-gray-400" : ""}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMarkAttendance(dayInfo.dateStr, dayInfo.dayName, opt.status);
+                        }}
+                      >
+                        {opt.icon}
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
@@ -1362,7 +1462,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
 
       {editMode && (
         <p className="text-[10px] text-gray-400 mt-2 italic">
-          Click on any date to toggle attendance: Unmarked → Present → Absent → Present
+          Click on any date to mark attendance: Present (green), Absent (red), or No Site (grey)
         </p>
       )}
     </div>
