@@ -105,6 +105,7 @@ interface Employee {
   companyName: string | null;
   passportStatus: string | null;
   idStatus: string | null;
+  currentSite: string | null;
   createdAt: string;
   updatedAt: string;
   attendances: Attendance[];
@@ -2252,6 +2253,24 @@ function EmployeeDetailView() {
                 <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{employee.position || "—"}</p>
               </div>
               <div>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-0.5">Current Working Site</p>
+                <div className="mt-0.5">
+                  {employee.currentSite === "idle" ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                      <MinusCircle className="h-3 w-3" />
+                      Idle
+                    </span>
+                  ) : employee.currentSite ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                      <Building2 className="h-3 w-3" />
+                      {employee.currentSite}
+                    </span>
+                  ) : (
+                    <span className="text-sm text-gray-400 dark:text-gray-500">—</span>
+                  )}
+                </div>
+              </div>
+              <div>
                 <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-0.5">Passport Status</p>
                 <div className="mt-0.5">{statusBadge(employee.passportStatus)}</div>
               </div>
@@ -2302,11 +2321,20 @@ function EmployeeFormView() {
     companyName: "",
     passportStatus: "",
     idStatus: "",
+    currentSite: "",
     rating: 5.0,
     emergencyContact: "",
     address: "",
     photoUrl: "" as string | null,
   });
+
+  // Sites state for current working site dropdown
+  const [sites, setSites] = useState<string[]>([]);
+  const [siteSearch, setSiteSearch] = useState("");
+  const [showSiteDropdown, setShowSiteDropdown] = useState(false);
+  const [newSiteName, setNewSiteName] = useState("");
+  const [showAddSiteInput, setShowAddSiteInput] = useState(false);
+  const siteDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (selectedEmployeeId) {
@@ -2328,6 +2356,7 @@ function EmployeeFormView() {
             companyName: data.companyName || "",
             passportStatus: data.passportStatus || "",
             idStatus: data.idStatus || "",
+            currentSite: data.currentSite || "",
             rating: data.rating || 5.0,
             emergencyContact: data.emergencyContact || "",
             address: data.address || "",
@@ -2343,6 +2372,62 @@ function EmployeeFormView() {
       setFormData((prev) => ({ ...prev, employeeId: `EMP-${Date.now().toString().slice(-6)}` }));
     }
   }, [selectedEmployeeId]);
+
+  // Fetch sites for the dropdown
+  useEffect(() => {
+    fetch("/api/sites")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setSites(data.map((s: any) => s.name));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Close site dropdown on outside click
+  useEffect(() => {
+    if (!showSiteDropdown) return;
+    const handleClick = (e: MouseEvent) => {
+      if (siteDropdownRef.current && !siteDropdownRef.current.contains(e.target as Node)) {
+        setShowSiteDropdown(false);
+        setSiteSearch("");
+        setShowAddSiteInput(false);
+        setNewSiteName("");
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showSiteDropdown]);
+
+  // Handle adding a new site
+  const handleAddSite = async () => {
+    if (!newSiteName.trim()) {
+      toast.error("Enter a site name");
+      return;
+    }
+    try {
+      const res = await fetch("/api/sites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newSiteName.trim() }),
+      });
+      if (res.ok) {
+        const site = await res.json();
+        setSites((prev) => prev.includes(site.name) ? prev : [...prev, site.name].sort());
+        setFormData((prev) => ({ ...prev, currentSite: site.name }));
+        toast.success(`Site "${site.name}" added`);
+        setNewSiteName("");
+        setShowAddSiteInput(false);
+        setShowSiteDropdown(false);
+        setSiteSearch("");
+      } else {
+        toast.error("Failed to add site");
+      }
+    } catch {
+      toast.error("Failed to add site");
+    }
+  };
 
   const updateField = (field: string, value: string | number | null) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -2738,6 +2823,142 @@ function EmployeeFormView() {
                 </Select>
               </div>
 
+              {/* Current Working Site — Custom searchable dropdown */}
+              <div className="space-y-1.5" ref={siteDropdownRef}>
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <Building2 className="h-3.5 w-3.5 text-emerald-500" />
+                  Current Working Site
+                </Label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="w-full flex items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                    onClick={() => {
+                      setShowSiteDropdown(!showSiteDropdown);
+                      setSiteSearch("");
+                      setShowAddSiteInput(false);
+                    }}
+                  >
+                    <span className={formData.currentSite ? "" : "text-muted-foreground"}>
+                      {formData.currentSite === "idle"
+                        ? "⏸ Idle"
+                        : formData.currentSite || "Select site..."}
+                    </span>
+                    <ChevronLeft className={`h-4 w-4 opacity-50 transition-transform ${showSiteDropdown ? "-rotate-90" : "rotate-180"}`} />
+                  </button>
+
+                  {showSiteDropdown && (
+                    <div className="absolute z-50 top-full mt-1 w-full bg-popover border border-border rounded-lg shadow-xl overflow-hidden">
+                      {/* Search input */}
+                      <div className="p-2 border-b border-border">
+                        <input
+                          type="text"
+                          placeholder="Search sites..."
+                          value={siteSearch}
+                          onChange={(e) => {
+                            setSiteSearch(e.target.value);
+                            setShowAddSiteInput(false);
+                          }}
+                          className="w-full px-2.5 py-1.5 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                          autoFocus
+                        />
+                      </div>
+
+                      {/* Scrollable options list */}
+                      <div className="max-h-[200px] overflow-y-auto">
+                        {/* Site names (filtered by search) */}
+                        {sites
+                          .filter((s) => s.toLowerCase().includes(siteSearch.toLowerCase()))
+                          .map((siteName) => (
+                            <button
+                              key={siteName}
+                              type="button"
+                              className={`w-full text-left px-3 py-2 text-xs hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors flex items-center gap-2 ${
+                                formData.currentSite === siteName ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 font-semibold" : ""
+                              }`}
+                              onClick={() => {
+                                updateField("currentSite", siteName);
+                                setShowSiteDropdown(false);
+                                setSiteSearch("");
+                              }}
+                            >
+                              <Building2 className="h-3 w-3 text-emerald-500" />
+                              {siteName}
+                              {formData.currentSite === siteName && <span className="ml-auto text-[9px]">✓</span>}
+                            </button>
+                          ))}
+
+                        {/* No matching sites message */}
+                        {sites.filter((s) => s.toLowerCase().includes(siteSearch.toLowerCase())).length === 0 && siteSearch && !showAddSiteInput && (
+                          <div className="px-3 py-2 text-xs text-muted-foreground text-center">
+                            No sites found matching "{siteSearch}"
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Bottom section: Idle + Add New Site */}
+                      <div className="border-t border-border">
+                        {/* Idle option */}
+                        <button
+                          type="button"
+                          className={`w-full text-left px-3 py-2.5 text-xs hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors flex items-center gap-2 border-b border-border ${
+                            formData.currentSite === "idle" ? "bg-amber-100 dark:bg-amber-900/40 font-semibold" : ""
+                          }`}
+                          onClick={() => {
+                            updateField("currentSite", "idle");
+                            setShowSiteDropdown(false);
+                            setSiteSearch("");
+                          }}
+                        >
+                          <span className="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0" />
+                          <span className="text-amber-700 dark:text-amber-400 font-medium">⏸ Idle</span>
+                          {formData.currentSite === "idle" && <span className="ml-auto text-[9px]">✓</span>}
+                        </button>
+
+                        {/* Add New Site option */}
+                        {!showAddSiteInput ? (
+                          <button
+                            type="button"
+                            className="w-full text-left px-3 py-2.5 text-xs hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors flex items-center gap-2"
+                            onClick={() => setShowAddSiteInput(true)}
+                          >
+                            <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
+                            <span className="text-blue-700 dark:text-blue-400 font-medium">+ Add New Site</span>
+                          </button>
+                        ) : (
+                          <div className="px-3 py-2 space-y-2">
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                placeholder="Enter new site name"
+                                value={newSiteName}
+                                onChange={(e) => setNewSiteName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    handleAddSite();
+                                  }
+                                }}
+                                className="flex-1 px-2 py-1.5 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                                autoFocus
+                              />
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="h-7 px-2.5 text-[10px] bg-blue-600 hover:bg-blue-700 text-white"
+                                onClick={handleAddSite}
+                              >
+                                Add
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Rating — auto-calculated, display only */}
               <div className="space-y-1.5 md:col-span-2">
                 <Label className="flex items-center gap-1.5 text-xs">
@@ -3047,6 +3268,7 @@ function NotificationsView() {
   const [warningReason, setWarningReason] = useState("");
   const [warningSaving, setWarningSaving] = useState(false);
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
+  const [warningYearFilter, setWarningYearFilter] = useState<string>("all");
   const [warningMonthFilter, setWarningMonthFilter] = useState<string>("all");
 
   // Tab: Fines
@@ -3057,6 +3279,7 @@ function NotificationsView() {
   const [fineReason, setFineReason] = useState("");
   const [fineAmount, setFineAmount] = useState("");
   const [fineSaving, setFineSaving] = useState(false);
+  const [fineYearFilter, setFineYearFilter] = useState<string>("all");
   const [fineMonthFilter, setFineMonthFilter] = useState<string>("all");
 
   // Refs for scrolling to highlighted items
@@ -3095,9 +3318,10 @@ function NotificationsView() {
     try {
       const params = new URLSearchParams();
       if (warningMonthFilter !== "all") {
-        const [year, month] = warningMonthFilter.split("-");
-        params.set("month", month);
-        params.set("year", year);
+        params.set("month", warningMonthFilter);
+      }
+      if (warningYearFilter !== "all") {
+        params.set("year", warningYearFilter);
       }
       const res = await fetch(`/api/warnings?${params}`);
       if (res.ok) {
@@ -3109,16 +3333,17 @@ function NotificationsView() {
     } finally {
       setWarningsLoading(false);
     }
-  }, [warningMonthFilter]);
+  }, [warningMonthFilter, warningYearFilter]);
 
   // Fetch fines
   const fetchFines = useCallback(async () => {
     try {
       const params = new URLSearchParams();
       if (fineMonthFilter !== "all") {
-        const [year, month] = fineMonthFilter.split("-");
-        params.set("month", month);
-        params.set("year", year);
+        params.set("month", fineMonthFilter);
+      }
+      if (fineYearFilter !== "all") {
+        params.set("year", fineYearFilter);
       }
       const res = await fetch(`/api/fines?${params}`);
       if (res.ok) {
@@ -3130,7 +3355,7 @@ function NotificationsView() {
     } finally {
       setFinesLoading(false);
     }
-  }, [fineMonthFilter]);
+  }, [fineMonthFilter, fineYearFilter]);
 
   useEffect(() => {
     fetchRequests();
@@ -3335,16 +3560,23 @@ function NotificationsView() {
   const unreadFines = fines.filter((f) => !f.read).length;
   const unreadRequests = requests.filter((r) => !r.read && r.status === "pending").length;
 
-  // Generate month options for filter (last 12 months)
+  // Generate year options for filter (5 years back + current year)
+  const yearOptions = useMemo(() => {
+    const options: { value: string; label: string }[] = [{ value: "all", label: "All Years" }];
+    const now = new Date();
+    for (let y = now.getFullYear(); y >= now.getFullYear() - 5; y--) {
+      options.push({ value: String(y), label: String(y) });
+    }
+    return options;
+  }, []);
+
+  // Generate month options for filter (1-12)
   const monthOptions = useMemo(() => {
     const options: { value: string; label: string }[] = [{ value: "all", label: "All Months" }];
-    const now = new Date();
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const label = d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-      options.push({ value, label });
-    }
+    const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    months.forEach((m, i) => {
+      options.push({ value: String(i + 1), label: m });
+    });
     return options;
   }, []);
 
@@ -3543,8 +3775,18 @@ function NotificationsView() {
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-3">
                 <h3 className="text-lg font-semibold">Warning Notices</h3>
+                <Select value={warningYearFilter} onValueChange={setWarningYearFilter}>
+                  <SelectTrigger className="w-[110px] h-8 text-xs">
+                    <SelectValue placeholder="All Years" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {yearOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Select value={warningMonthFilter} onValueChange={setWarningMonthFilter}>
-                  <SelectTrigger className="w-44 h-8 text-xs">
+                  <SelectTrigger className="w-[130px] h-8 text-xs">
                     <SelectValue placeholder="All Months" />
                   </SelectTrigger>
                   <SelectContent>
@@ -3812,8 +4054,18 @@ function NotificationsView() {
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-3">
                 <h3 className="text-lg font-semibold">Fine Notices</h3>
+                <Select value={fineYearFilter} onValueChange={setFineYearFilter}>
+                  <SelectTrigger className="w-[110px] h-8 text-xs">
+                    <SelectValue placeholder="All Years" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {yearOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Select value={fineMonthFilter} onValueChange={setFineMonthFilter}>
-                  <SelectTrigger className="w-44 h-8 text-xs">
+                  <SelectTrigger className="w-[130px] h-8 text-xs">
                     <SelectValue placeholder="All Months" />
                   </SelectTrigger>
                   <SelectContent>

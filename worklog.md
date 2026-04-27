@@ -45,3 +45,34 @@ Stage Summary:
 - Attendance marking bug FIXED: Root cause was `take: 31` with incorrect string-based date sorting
 - Calendar future date restriction IMPLEMENTED: Only dates up to today are editable
 - Dropdown upward positioning IMPLEMENTED: Both calendar and dashboard list detect screen space and open upward when needed
+---
+Task ID: 2
+Agent: Main Agent
+Task: Add Current Working Site dropdown and separate Year/Month filtering for notifications
+
+Work Log:
+- Added Site model to Prisma schema with id, name (unique), createdAt
+- Added currentSite field to Employee model (String?, nullable)
+- Ran prisma db push successfully
+- Created /api/sites route with GET, POST, DELETE methods
+- Updated Employee interface to include currentSite field
+- Added Current Working Site display in Employee Detail Professional Details section with colored badges (amber for Idle, emerald for site names)
+- Built custom searchable dropdown for Current Working Site in Employee Form:
+  - Search input to filter sites
+  - Site names listed alphabetically with Building2 icon
+  - "Idle" option at bottom with amber color dot and ⏸ icon
+  - "Add New Site" option at bottom with blue color dot and + icon
+  - Inline input for adding new site name
+  - Sites stored in database and fetched on form load
+  - Auto-selects newly added site
+- Updated Notifications view: replaced combined month/year dropdown with separate Year and Month selects
+  - Year options: All Years + current year back 5 years
+  - Month options: All Months + January through December
+  - Applied to both Warnings and Fines tabs
+- Updated warnings and fines API routes to support independent year and month filtering
+- Build successful, all API tests pass
+
+Stage Summary:
+- Current Working Site feature fully implemented with searchable dropdown, idle/add options, and database persistence
+- Notifications now have separate Year and Month filters for more flexible filtering
+- All new API routes working (tested /api/sites CRUD)

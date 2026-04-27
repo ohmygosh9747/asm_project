@@ -47,15 +47,28 @@ export async function GET(request: NextRequest) {
     }
 
     // Filter by month/year using createdAt
-    if (month && year) {
-      const mm = parseInt(month) - 1; // JS months are 0-indexed
-      const yyyy = parseInt(year);
-      const startDate = new Date(yyyy, mm, 1);
-      const endDate = new Date(yyyy, mm + 1, 1);
-      where.createdAt = {
-        gte: startDate,
-        lt: endDate,
-      };
+    if (month || year) {
+      if (month && year) {
+        // Both: filter to specific month of specific year
+        const mm = parseInt(month) - 1;
+        const yyyy = parseInt(year);
+        const start = new Date(yyyy, mm, 1);
+        const end = new Date(yyyy, mm + 1, 1);
+        where.createdAt = { gte: start, lt: end };
+      } else if (year) {
+        // Only year: filter to entire year
+        const yyyy = parseInt(year);
+        const start = new Date(yyyy, 0, 1);
+        const end = new Date(yyyy + 1, 0, 1);
+        where.createdAt = { gte: start, lt: end };
+      } else if (month) {
+        // Only month: filter to that month in current year
+        const mm = parseInt(month) - 1;
+        const yyyy = new Date().getFullYear();
+        const start = new Date(yyyy, mm, 1);
+        const end = new Date(yyyy, mm + 1, 1);
+        where.createdAt = { gte: start, lt: end };
+      }
     }
 
     const warnings = await db.warning.findMany({
