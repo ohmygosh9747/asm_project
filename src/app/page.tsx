@@ -660,7 +660,8 @@ function EmployeeRow({
   onAttendanceChange: () => void;
 }) {
   const { setView, setSelectedEmployee, user } = useAppStore();
-  const [openPopover, setOpenPopover] = useState<number | null>(null);
+  const [openDay, setOpenDay] = useState<number | null>(null);
+  const rowRef = useRef<HTMLTableRowElement>(null);
 
   const getAttendanceForDay = (daysAgo: number): Attendance | undefined => {
     const dateStr = getDateStr(daysAgo);
@@ -681,7 +682,7 @@ function EmployeeRow({
           markedBy: user?.name || "System",
         }),
       });
-      setOpenPopover(null);
+      setOpenDay(null);
       onAttendanceChange();
     } catch {
       toast.error("Failed to update attendance");
@@ -693,13 +694,25 @@ function EmployeeRow({
     if (status === "present") return { bg: "bg-emerald-500", text: "text-white", icon: <CheckCircle2 className="h-4 w-4" />, label: "Present" };
     if (status === "absent") return { bg: "bg-red-500", text: "text-white", icon: <XCircle className="h-4 w-4" />, label: "Absent" };
     if (status === "no_site") return { bg: "bg-gray-400", text: "text-white", icon: <MinusCircle className="h-4 w-4" />, label: "No Site" };
-    // No record — today defaults to absent visually, other days show grey/unmarked
     if (isToday) return { bg: "bg-red-500", text: "text-white", icon: <XCircle className="h-4 w-4" />, label: "Absent" };
     return { bg: "bg-gray-300 dark:bg-gray-600", text: "text-white", icon: <MinusCircle className="h-4 w-4" />, label: "—" };
   };
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (openDay === null) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (rowRef.current && !rowRef.current.contains(e.target as Node)) {
+        setOpenDay(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [openDay]);
+
   return (
     <motion.tr
+      ref={rowRef}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       className="border-b border-emerald-100 dark:border-emerald-900/30 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-colors"
@@ -708,11 +721,7 @@ function EmployeeRow({
       <td className="px-4 py-3">
         <div className="h-10 w-10 rounded-full overflow-hidden bg-gradient-to-br from-emerald-400 to-teal-500 flex-shrink-0">
           {employee.photoUrl ? (
-            <img
-              src={employee.photoUrl}
-              alt={employee.fullName}
-              className="h-full w-full object-cover"
-            />
+            <img src={employee.photoUrl} alt={employee.fullName} className="h-full w-full object-cover" />
           ) : (
             <div className="h-full w-full flex items-center justify-center text-white text-xs font-bold">
               {getInitials(employee.fullName)}
@@ -733,54 +742,56 @@ function EmployeeRow({
           {[0, 1, 2].map((daysAgo) => {
             const att = getAttendanceForDay(daysAgo);
             const isToday = daysAgo === 0;
-            // Today: default absent if no record; other days: show DB data only
             const effectiveStatus = att?.status || (isToday ? "absent" : null);
             const style = getStatusStyle(effectiveStatus, isToday);
             const dateStr = getDateStr(daysAgo);
             const dayName = getDayNameFromDateStr(dateStr);
+            const isOpen = openDay === daysAgo;
 
             return (
-              <Popover
-                key={daysAgo}
-                open={openPopover === daysAgo}
-                onOpenChange={(open) => setOpenPopover(open ? daysAgo : null)}
-              >
-                <PopoverTrigger asChild>
-                  <button
-                    className="flex flex-col items-center gap-1 group"
-                    title={`${getDayLabel(daysAgo)}: ${style.label} (click to mark)`}
+              <div key={daysAgo} className="relative">
+                <button
+                  className="flex flex-col items-center gap-1 group"
+                  title={`${getDayLabel(daysAgo)}: ${style.label} (click to mark)`}
+                  onClick={() => setOpenDay(isOpen ? null : daysAgo)}
+                >
+                  <span className="text-[10px] text-muted-foreground group-hover:text-foreground transition-colors">
+                    {getDayLabel(daysAgo)}
+                  </span>
+                  <span
+                    className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer hover:scale-110 ${style.bg} ${style.text}`}
                   >
-                    <span className="text-[10px] text-muted-foreground group-hover:text-foreground transition-colors">
-                      {getDayLabel(daysAgo)}
-                    </span>
-                    <span
-                      className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer hover:scale-110 ${style.bg} ${style.text}`}
-                    >
-                      {style.icon}
-                    </span>
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-44 p-1.5" align="center" sideOffset={5}>
-                  <p className="text-[10px] text-muted-foreground font-medium px-2 pt-1 pb-1.5">
-                    {dayName}, {dateStr}
-                  </p>
-                  {[
-                    { status: "present", label: "Present", bg: "bg-emerald-500", icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
-                    { status: "absent", label: "Absent", bg: "bg-red-500", icon: <XCircle className="h-3.5 w-3.5" /> },
-                    { status: "no_site", label: "No Site", bg: "bg-gray-400", icon: <MinusCircle className="h-3.5 w-3.5" /> },
-                  ].map((opt) => (
-                    <button
-                      key={opt.status}
-                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-medium text-white ${opt.bg} hover:opacity-90 transition-opacity ${effectiveStatus === opt.status ? "ring-2 ring-offset-1 ring-gray-400" : ""}`}
-                      onClick={() => markAttendance(daysAgo, opt.status)}
-                    >
-                      {opt.icon}
-                      {opt.label}
-                      {effectiveStatus === opt.status && <span className="ml-auto text-[9px] opacity-80">current</span>}
-                    </button>
-                  ))}
-                </PopoverContent>
-              </Popover>
+                    {style.icon}
+                  </span>
+                </button>
+
+                {/* Dropdown options */}
+                {isOpen && (
+                  <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-1 bg-popover border border-border rounded-lg shadow-xl p-2 w-[140px]">
+                    <p className="text-[10px] text-muted-foreground font-medium px-1.5 pb-1.5 border-b border-border mb-1.5">
+                      {dayName}, {dateStr}
+                    </p>
+                    {[
+                      { status: "present", label: "Present", bg: "bg-emerald-500 hover:bg-emerald-600", icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
+                      { status: "absent", label: "Absent", bg: "bg-red-500 hover:bg-red-600", icon: <XCircle className="h-3.5 w-3.5" /> },
+                      { status: "no_site", label: "No Site", bg: "bg-gray-400 hover:bg-gray-500", icon: <MinusCircle className="h-3.5 w-3.5" /> },
+                    ].map((opt) => (
+                      <button
+                        key={opt.status}
+                        className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-xs font-medium text-white ${opt.bg} transition-colors my-1 first:mt-0 last:mb-0 ${effectiveStatus === opt.status ? "ring-2 ring-offset-1 ring-white/70 dark:ring-offset-slate-800" : ""}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          markAttendance(daysAgo, opt.status);
+                        }}
+                      >
+                        {opt.icon}
+                        {opt.label}
+                        {effectiveStatus === opt.status && <span className="ml-auto text-[9px] opacity-80">✓</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
@@ -1272,7 +1283,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
   return (
     <div className="mb-2">
       {/* Section Title */}
-      <h3 className="text-[11px] font-bold tracking-[0.2em] uppercase text-emerald-600 mb-4 pb-1.5 border-b-2 border-emerald-600">
+      <h3 className="text-[11px] font-bold tracking-[0.2em] uppercase text-emerald-600 dark:text-emerald-400 print:text-emerald-600 mb-4 pb-1.5 border-b-2 border-emerald-600 dark:border-emerald-500 print:border-emerald-600">
         Attendance Record
       </h3>
 
@@ -1327,18 +1338,18 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
             No Site: {monthStats.noSite}
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm bg-white inline-block border border-gray-300" />
+            <span className="w-2.5 h-2.5 rounded-sm bg-white dark:bg-slate-600 inline-block border border-gray-300 dark:border-slate-500" />
             Unmarked: {monthStats.unmarked}
           </span>
         </div>
       </div>
 
       {/* Calendar Grid */}
-      <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+      <div className="border border-gray-200 dark:border-slate-600 print:border-gray-200 rounded-xl overflow-hidden shadow-sm">
         {/* Day headers */}
-        <div className="grid grid-cols-7 bg-gradient-to-r from-gray-50 to-gray-100">
+        <div className="grid grid-cols-7 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-slate-700 dark:to-slate-700 print:from-gray-50 print:to-gray-100">
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-            <div key={d} className="text-center text-[10px] font-bold text-gray-500 uppercase tracking-wider py-2 border-b border-gray-200">
+            <div key={d} className="text-center text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider py-2 border-b border-gray-200 dark:border-slate-600 print:border-gray-200">
               {d}
             </div>
           ))}
@@ -1358,20 +1369,20 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
             let cellBg = "";
             let dayNumColor = "";
             if (!dayInfo.isCurrentMonth) {
-              cellBg = "bg-gray-50/60";
-              dayNumColor = "text-gray-300";
+              cellBg = "bg-gray-50/60 dark:bg-slate-800/40";
+              dayNumColor = "text-gray-300 dark:text-gray-600";
             } else if (isPresent) {
-              cellBg = "bg-emerald-50";
-              dayNumColor = "text-emerald-700";
+              cellBg = "bg-emerald-50 dark:bg-emerald-950/40 print:bg-emerald-50";
+              dayNumColor = "text-emerald-700 dark:text-emerald-300 print:text-emerald-700";
             } else if (isAbsent) {
-              cellBg = "bg-red-50";
-              dayNumColor = "text-red-700";
+              cellBg = "bg-red-50 dark:bg-red-950/30 print:bg-red-50";
+              dayNumColor = "text-red-700 dark:text-red-400 print:text-red-700";
             } else if (isNoSite) {
-              cellBg = "bg-gray-100";
-              dayNumColor = "text-gray-600";
+              cellBg = "bg-gray-100 dark:bg-slate-700/50 print:bg-gray-100";
+              dayNumColor = "text-gray-600 dark:text-gray-400 print:text-gray-600";
             } else {
-              cellBg = "bg-white";
-              dayNumColor = "text-gray-700";
+              cellBg = "bg-white dark:bg-slate-800 print:bg-white";
+              dayNumColor = "text-gray-700 dark:text-gray-300 print:text-gray-700";
             }
 
             // Left accent bar color
@@ -1384,7 +1395,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
               <div
                 key={idx}
                 className={`
-                  relative min-h-[60px] p-1.5 border-b border-r border-gray-100
+                  relative min-h-[60px] p-1.5 border-b border-r border-gray-100 dark:border-slate-700 print:border-gray-100
                   ${cellBg}
                   ${editMode && dayInfo.isCurrentMonth ? "cursor-pointer" : ""}
                   transition-colors duration-150
@@ -1412,37 +1423,37 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
                 {/* Status indicator */}
                 {dayInfo.isCurrentMonth && isPresent && (
                   <div className="pl-1.5 mt-0.5 flex items-center gap-1">
-                    <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                    <span className="text-[8px] text-emerald-600 font-medium">P</span>
+                    <CheckCircle2 className="h-3 w-3 text-emerald-500 dark:text-emerald-400" />
+                    <span className="text-[8px] text-emerald-600 dark:text-emerald-400 font-medium">P</span>
                   </div>
                 )}
                 {dayInfo.isCurrentMonth && isAbsent && (
                   <div className="pl-1.5 mt-0.5 flex items-center gap-1">
-                    <XCircle className="h-3 w-3 text-red-500" />
-                    <span className="text-[8px] text-red-600 font-medium">A</span>
+                    <XCircle className="h-3 w-3 text-red-500 dark:text-red-400" />
+                    <span className="text-[8px] text-red-600 dark:text-red-400 font-medium">A</span>
                   </div>
                 )}
                 {dayInfo.isCurrentMonth && isNoSite && (
                   <div className="pl-1.5 mt-0.5 flex items-center gap-1">
-                    <MinusCircle className="h-3 w-3 text-gray-400" />
-                    <span className="text-[8px] text-gray-500 font-medium">NS</span>
+                    <MinusCircle className="h-3 w-3 text-gray-400 dark:text-gray-500" />
+                    <span className="text-[8px] text-gray-500 dark:text-gray-400 font-medium">NS</span>
                   </div>
                 )}
 
                 {/* Edit mode: option popup for this day */}
                 {editMode && isActive && dayInfo.isCurrentMonth && (
-                  <div className="absolute z-30 left-1/2 -translate-x-1/2 top-full mt-0.5 bg-white rounded-lg shadow-xl border border-gray-200 p-1.5 w-[130px]">
-                    <p className="text-[9px] text-gray-400 font-medium px-1.5 pb-1">
+                  <div className="absolute z-30 left-1/2 -translate-x-1/2 top-full mt-0.5 bg-white dark:bg-slate-700 rounded-lg shadow-xl border border-gray-200 dark:border-slate-600 p-2 w-[130px]">
+                    <p className="text-[9px] text-gray-400 dark:text-gray-500 font-medium px-1 pb-1.5 border-b border-gray-100 dark:border-slate-600 mb-2">
                       {dayInfo.dayName}, {dayInfo.dateStr}
                     </p>
                     {[
-                      { status: "present", label: "Present", bg: "bg-emerald-500", icon: <CheckCircle2 className="h-3 w-3" /> },
-                      { status: "absent", label: "Absent", bg: "bg-red-500", icon: <XCircle className="h-3 w-3" /> },
-                      { status: "no_site", label: "No Site", bg: "bg-gray-400", icon: <MinusCircle className="h-3 w-3" /> },
+                      { status: "present", label: "Present", bg: "bg-emerald-500 hover:bg-emerald-600", icon: <CheckCircle2 className="h-3 w-3" /> },
+                      { status: "absent", label: "Absent", bg: "bg-red-500 hover:bg-red-600", icon: <XCircle className="h-3 w-3" /> },
+                      { status: "no_site", label: "No Site", bg: "bg-gray-400 hover:bg-gray-500", icon: <MinusCircle className="h-3 w-3" /> },
                     ].map((opt) => (
                       <button
                         key={opt.status}
-                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[11px] font-medium text-white ${opt.bg} hover:opacity-90 transition-opacity mb-0.5 last:mb-0 ${dayInfo.status === opt.status ? "ring-2 ring-offset-1 ring-gray-400" : ""}`}
+                        className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-[11px] font-medium text-white ${opt.bg} transition-colors my-1 first:mt-0 last:mb-0 ${dayInfo.status === opt.status ? "ring-2 ring-offset-1 ring-white/70 dark:ring-offset-slate-700" : ""}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleMarkAttendance(dayInfo.dateStr, dayInfo.dayName, opt.status);
@@ -1461,7 +1472,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
       </div>
 
       {editMode && (
-        <p className="text-[10px] text-gray-400 mt-2 italic">
+        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2 italic">
           Click on any date to mark attendance: Present (green), Absent (red), or No Site (grey)
         </p>
       )}
@@ -1509,13 +1520,24 @@ function EmployeeDetailView() {
     if (!printRef.current || !employee) return;
     try {
       toast.info("Generating PDF...");
+      // Temporarily force light mode on the CV card for PDF capture
+      const card = printRef.current;
+      const hadDark = card.classList.contains("dark:bg-slate-800");
+      card.style.backgroundColor = "#ffffff";
+      card.style.color = "#1a1a1a";
+
       const html2canvas = (await import("html2canvas")).default;
       const jsPDF = (await import("jspdf")).default;
-      const canvas = await html2canvas(printRef.current, {
+      const canvas = await html2canvas(card, {
         scale: 2,
         useCORS: true,
         backgroundColor: "#ffffff",
       });
+
+      // Restore original styles
+      card.style.backgroundColor = "";
+      card.style.color = "";
+
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF("p", "mm", "a4");
       const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -1788,7 +1810,7 @@ function EmployeeDetailView() {
       </Dialog>
 
       {/* CV Content */}
-      <div ref={printRef} className="bg-white rounded-xl shadow-lg overflow-hidden text-gray-900">
+      <div ref={printRef} className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden text-gray-900 dark:text-gray-100 print:bg-white print:text-gray-900">
         {/* Header Bar */}
         <div className="bg-gradient-to-r from-emerald-700 via-emerald-600 to-teal-600 text-white px-8 py-6">
           <div className="flex items-center gap-6">
@@ -1835,62 +1857,62 @@ function EmployeeDetailView() {
         </div>
 
         {/* Body */}
-        <div className="px-8 py-6 space-y-0">
+        <div className="px-8 py-6 space-y-0 bg-white dark:bg-slate-800 print:bg-white">
           {/* Personal Details */}
           <div className="mb-6">
-            <h3 className="text-[11px] font-bold tracking-[0.2em] uppercase text-emerald-600 mb-4 pb-1.5 border-b-2 border-emerald-600">
+            <h3 className="text-[11px] font-bold tracking-[0.2em] uppercase text-emerald-600 dark:text-emerald-400 print:text-emerald-600 mb-4 pb-1.5 border-b-2 border-emerald-600 dark:border-emerald-500 print:border-emerald-600">
               Personal Details
             </h3>
             <div className="grid grid-cols-2 gap-x-12 gap-y-3">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5">Full Name</p>
-                <p className="text-sm font-semibold text-gray-800">{employee.fullName}</p>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-0.5">Full Name</p>
+                <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{employee.fullName}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5">Company ID</p>
-                <p className="text-sm font-semibold text-gray-800">{employee.employeeId}</p>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-0.5">Company ID</p>
+                <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{employee.employeeId}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5 flex items-center gap-1">
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-0.5 flex items-center gap-1">
                   Passport Number
                   <Lock className="h-2.5 w-2.5 text-amber-500" />
                 </p>
-                <p className="text-sm font-semibold text-gray-800">{employee.passportNumber || "—"}</p>
+                <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{employee.passportNumber || "—"}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5 flex items-center gap-1">
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-0.5 flex items-center gap-1">
                   ID Number
                   <Lock className="h-2.5 w-2.5 text-amber-500" />
                 </p>
-                <p className="text-sm font-semibold text-gray-800">{employee.idNumber || "—"}</p>
+                <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{employee.idNumber || "—"}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5">Joining Date</p>
-                <p className="text-sm font-semibold text-gray-800">{formatDateCV(employee.joinDate)}</p>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-0.5">Joining Date</p>
+                <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{formatDateCV(employee.joinDate)}</p>
               </div>
             </div>
           </div>
 
           {/* Professional Details */}
           <div className="mb-6">
-            <h3 className="text-[11px] font-bold tracking-[0.2em] uppercase text-emerald-600 mb-4 pb-1.5 border-b-2 border-emerald-600">
+            <h3 className="text-[11px] font-bold tracking-[0.2em] uppercase text-emerald-600 dark:text-emerald-400 print:text-emerald-600 mb-4 pb-1.5 border-b-2 border-emerald-600 dark:border-emerald-500 print:border-emerald-600">
               Professional Details
             </h3>
             <div className="grid grid-cols-2 gap-x-12 gap-y-3">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5">Company Name</p>
-                <p className="text-sm font-semibold text-gray-800">{employee.companyName || "—"}</p>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-0.5">Company Name</p>
+                <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{employee.companyName || "—"}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5">Position</p>
-                <p className="text-sm font-semibold text-gray-800">{employee.position || "—"}</p>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-0.5">Position</p>
+                <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{employee.position || "—"}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5">Passport Status</p>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-0.5">Passport Status</p>
                 <div className="mt-0.5">{statusBadge(employee.passportStatus)}</div>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5">ID Status</p>
+                <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-0.5">ID Status</p>
                 <div className="mt-0.5">{statusBadge(employee.idStatus)}</div>
               </div>
             </div>
@@ -1902,8 +1924,8 @@ function EmployeeDetailView() {
         </div>
 
         {/* Footer */}
-        <div className="bg-gray-50 px-8 py-3 border-t border-gray-200">
-          <p className="text-[10px] text-gray-400 tracking-wider text-center uppercase">
+        <div className="bg-gray-50 dark:bg-slate-700/50 print:bg-gray-50 px-8 py-3 border-t border-gray-200 dark:border-slate-600 print:border-gray-200">
+          <p className="text-[10px] text-gray-400 dark:text-gray-500 print:text-gray-400 tracking-wider text-center uppercase">
             Arabian Shield Manpower — Confidential Workers Profile
           </p>
         </div>

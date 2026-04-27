@@ -155,6 +155,16 @@
     background: white !important;
     color: black !important;
   }
+  /* Force CV card to always be white when printed */
+  .print\:bg-white,
+  [class*="dark:"] {
+    background-color: white !important;
+    color: #1a1a1a !important;
+    border-color: #e5e7eb !important;
+  }
+  .dark {
+    background: white !important;
+  }
 }
 
 /* Animation for attendance badges */
