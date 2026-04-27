@@ -1401,9 +1401,12 @@ function EmployeeDetailView() {
                 </div>
               )}
             </div>
-            {/* Name & ID */}
+            {/* Name, Rating & ID */}
             <div className="flex-1 min-w-0">
-              <h2 className="text-2xl font-bold tracking-wide leading-tight">{employee.fullName}</h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-2xl font-bold tracking-wide leading-tight">{employee.fullName}</h2>
+                <StarRating rating={employee.rating} size={18} />
+              </div>
               <div className="flex items-center gap-3 mt-2">
                 <span className="text-sm font-medium text-emerald-100 bg-white/15 px-2.5 py-0.5 rounded-md">
                   ID: {employee.employeeId}
@@ -1488,16 +1491,7 @@ function EmployeeDetailView() {
             </div>
           </div>
 
-          {/* Assessment Grade */}
-          <div>
-            <h3 className="text-[11px] font-bold tracking-[0.2em] uppercase text-emerald-600 mb-4 pb-1.5 border-b-2 border-emerald-600">
-              Assessment Grade
-            </h3>
-            <div className="flex items-center gap-3">
-              <StarRating rating={employee.rating} size={22} />
-              <span className="text-lg font-bold text-gray-700">{employee.rating}<span className="text-sm text-gray-400 font-normal">/5</span></span>
-            </div>
-          </div>
+
         </div>
 
         {/* Footer */}
