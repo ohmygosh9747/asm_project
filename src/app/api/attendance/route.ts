@@ -29,7 +29,6 @@ export async function GET(request: NextRequest) {
 
     const where: any = {};
     if (employeeId) where.employeeId = employeeId;
-    if (date) where.date = date;
 
     // Filter by month/year: find all dates matching DD-MM-YYYY where MM=month and YYYY=year
     if (month && year) {
@@ -61,10 +60,18 @@ export async function POST(request: NextRequest) {
     // Compute dayName from date if not provided
     const computedDayName = dayName || getDayNameFromDate(date);
 
-    const data: any = { status, markedBy, dayName: computedDayName };
-    // Handle overtimeHours: only set when status is overtime
+    // If overtime is selected, auto-set status as present and save overtime hours
+    let actualStatus = status;
+    let actualOvertimeHours: number | null = null;
     if (status === "overtime") {
-      data.overtimeHours = overtimeHours ? parseFloat(String(overtimeHours)) : 0;
+      actualStatus = "present";
+      actualOvertimeHours = overtimeHours ? parseFloat(String(overtimeHours)) : 0;
+    }
+
+    const data: any = { status: actualStatus, markedBy, dayName: computedDayName };
+    // Set overtimeHours
+    if (actualOvertimeHours !== null) {
+      data.overtimeHours = actualOvertimeHours;
     } else {
       data.overtimeHours = null;
     }
@@ -76,7 +83,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Auto-warning logic: if marking absent, check for 3 consecutive absences
-    if (status === "absent") {
+    if (actualStatus === "absent") {
       try {
         const today = new Date();
         const last3Dates: string[] = [];
@@ -152,11 +159,19 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const { id, status, markedBy, dayName, overtimeHours } = body;
 
-    const data: any = { status, markedBy };
-    if (dayName) data.dayName = dayName;
-    // Handle overtimeHours: only set when status is overtime
+    // If overtime is selected, auto-set status as present and save overtime hours
+    let actualStatus = status;
+    let actualOvertimeHours: number | null = null;
     if (status === "overtime") {
-      data.overtimeHours = overtimeHours ? parseFloat(String(overtimeHours)) : 0;
+      actualStatus = "present";
+      actualOvertimeHours = overtimeHours ? parseFloat(String(overtimeHours)) : 0;
+    }
+
+    const data: any = { status: actualStatus, markedBy };
+    if (dayName) data.dayName = dayName;
+    // Set overtimeHours
+    if (actualOvertimeHours !== null) {
+      data.overtimeHours = actualOvertimeHours;
     } else if (status) {
       data.overtimeHours = null;
     }
@@ -167,7 +182,7 @@ export async function PUT(request: NextRequest) {
     });
 
     // Same auto-warning logic for PUT (updating existing attendance to absent)
-    if (status === "absent") {
+    if (actualStatus === "absent") {
       try {
         const empId = attendance.employeeId;
         const today = new Date();
@@ -263,7 +278,7 @@ async function recalculateStarRating(employeeId: string) {
     // Count absences this month
     const absentCount = monthAttendance.filter((a) => a.status === "absent").length;
 
-    // Count overtime hours this month
+    // Count overtime hours this month (from attendance records where overtimeHours > 0)
     const totalOvertimeHours = monthAttendance.reduce((sum, a) => {
       return sum + (a.overtimeHours || 0);
     }, 0);

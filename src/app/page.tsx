@@ -118,6 +118,7 @@ interface Attendance {
   status: string;
   markedBy: string | null;
   createdAt: string;
+  overtimeHours?: number | null;
   employee?: { fullName: string; employeeId: string };
 }
 
@@ -129,6 +130,7 @@ interface DeleteRequestItem {
   reason: string | null;
   status: string;
   reviewedBy: string | null;
+  read: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -558,21 +560,26 @@ function Sidebar() {
 function Header() {
   const { searchQuery, setSearchQuery, setView, user, setSidebarOpen } = useAppStore();
   const { theme, setTheme } = useTheme();
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notifCount, setNotifCount] = useState(0);
   const [bellAnimating, setBellAnimating] = useState(false);
 
-  useEffect(() => {
-    if (user?.id) {
-      fetch(`/api/notifications?userId=${user.id}`)
-        .then((r) => r.json())
-        .then((data) => {
-          if (Array.isArray(data)) setNotifications(data);
-        })
-        .catch(() => {});
-    }
-  }, [user?.id]);
+  // Fetch combined notification count (requests + warnings + fines)
+  const fetchNotifCount = useCallback(async () => {
+    try {
+      const res = await fetch("/api/notification-count");
+      if (res.ok) {
+        const data = await res.json();
+        setNotifCount(data.total || 0);
+      }
+    } catch {}
+  }, []);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  useEffect(() => {
+    fetchNotifCount();
+    // Poll every 15 seconds
+    const interval = setInterval(fetchNotifCount, 15000);
+    return () => clearInterval(interval);
+  }, [fetchNotifCount]);
 
   const toggleDarkMode = async () => {
     const newTheme = theme === "dark" ? "light" : "dark";
@@ -639,13 +646,13 @@ function Header() {
           {/* Notifications */}
           <Button variant="ghost" size="icon" onClick={handleNotifClick} className="relative">
             <Bell className={`h-4 w-4 ${bellAnimating ? "animate-bounce" : ""}`} />
-            {unreadCount > 0 && (
+            {notifCount > 0 && (
               <motion.span
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-[10px] text-white flex items-center justify-center font-bold"
               >
-                {unreadCount > 9 ? "9+" : unreadCount}
+                {notifCount > 9 ? "9+" : notifCount}
               </motion.span>
             )}
           </Button>
@@ -696,6 +703,8 @@ function EmployeeRow({
   const markAttendance = async (daysAgo: number, status: string, overtimeHours?: number) => {
     const dateStr = getDateStr(daysAgo);
     try {
+      // Overtime auto-sets as present with overtime hours
+      const actualStatus = status === "overtime" ? "present" : status;
       const res = await fetch("/api/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -709,7 +718,7 @@ function EmployeeRow({
         }),
       });
       if (res.ok) {
-        const label = status === "no_site" ? "No Site" : status === "overtime" ? `OT: ${overtimeHours || 0}h` : status.charAt(0).toUpperCase() + status.slice(1);
+        const label = status === "no_site" ? "No Site" : status === "overtime" ? `OT: ${overtimeHours || 0}h (Present)` : status.charAt(0).toUpperCase() + status.slice(1);
         toast.success(`Marked ${label}`);
       } else {
         toast.error("Failed to update attendance");
@@ -726,12 +735,15 @@ function EmployeeRow({
 
   // Attendance status visual helper
   const getStatusStyle = (status: string | null | undefined, isToday: boolean, overtimeHours?: number) => {
+    // Present with overtime hours - show as OT
+    if (status === "present" && overtimeHours && overtimeHours > 0) return { bg: "bg-blue-500", text: "text-white", icon: <Clock className="h-4 w-4" />, label: `OT: ${overtimeHours}h` };
     if (status === "present") return { bg: "bg-emerald-500", text: "text-white", icon: <CheckCircle2 className="h-4 w-4" />, label: "Present" };
     if (status === "absent") return { bg: "bg-red-500", text: "text-white", icon: <XCircle className="h-4 w-4" />, label: "Absent" };
     if (status === "no_site") return { bg: "bg-gray-400", text: "text-white", icon: <MinusCircle className="h-4 w-4" />, label: "No Site" };
     if (status === "overtime") return { bg: "bg-blue-500", text: "text-white", icon: <Clock className="h-4 w-4" />, label: `OT: ${overtimeHours || 0}h` };
-    if (isToday) return { bg: "bg-red-500", text: "text-white", icon: <XCircle className="h-4 w-4" />, label: "Absent" };
-    return { bg: "bg-gray-300 dark:bg-gray-600", text: "text-white", icon: <MinusCircle className="h-4 w-4" />, label: "—" };
+    if (status === "not_marked") return { bg: "bg-gray-300 dark:bg-gray-600", text: "text-white", icon: <MinusCircle className="h-4 w-4" />, label: "Not Marked" };
+    // No record at all = Not Marked (not absent by default)
+    return { bg: "bg-gray-300 dark:bg-gray-600", text: "text-white", icon: <MinusCircle className="h-4 w-4" />, label: "Not Marked" };
   };
 
   const handleToggleDropdown = (daysAgo: number) => {
@@ -772,7 +784,7 @@ function EmployeeRow({
     if (openDay === null || !dropdownPos) return null;
     const att = getAttendanceForDay(openDay);
     const isToday = openDay === 0;
-    const effectiveStatus = att?.status || (isToday ? "absent" : null);
+    const effectiveStatus = att?.status || null; // No default - show Not Marked
     const dateStr = getDateStr(openDay);
     const dayName = getDayNameFromDateStr(dateStr);
 
@@ -897,7 +909,7 @@ function EmployeeRow({
             {[0, 1, 2].map((daysAgo) => {
               const att = getAttendanceForDay(daysAgo);
               const isToday = daysAgo === 0;
-              const effectiveStatus = att?.status || (isToday ? "absent" : null);
+              const effectiveStatus = att?.status || null; // No default - show Not Marked
               const style = getStatusStyle(effectiveStatus, isToday, (att as any)?.overtimeHours);
 
               return (
@@ -1026,15 +1038,15 @@ function DashboardView() {
     return pages;
   }, [safeCurrentPage, totalPages]);
 
-  // Stats — today defaults to absent if no record
+  // Stats — Not Marked is separate from Absent
   const todayStr = getDateStr(0);
   const presentToday = employees.filter((e) => {
     const todayAtt = e.attendances?.find((a) => a.date === todayStr);
-    return todayAtt?.status === "present";
+    return todayAtt?.status === "present" && !(todayAtt as any)?.overtimeHours;
   }).length;
   const absentToday = employees.filter((e) => {
     const todayAtt = e.attendances?.find((a) => a.date === todayStr);
-    return !todayAtt || todayAtt.status === "absent";
+    return todayAtt?.status === "absent";
   }).length;
   const noSiteToday = employees.filter((e) => {
     const todayAtt = e.attendances?.find((a) => a.date === todayStr);
@@ -1043,7 +1055,12 @@ function DashboardView() {
 
   const overtimeToday = employees.filter((e) => {
     const todayAtt = e.attendances?.find((a) => a.date === todayStr);
-    return todayAtt?.status === "overtime";
+    return todayAtt?.status === "present" && (todayAtt as any)?.overtimeHours && (todayAtt as any).overtimeHours > 0;
+  }).length;
+
+  const notMarkedToday = employees.filter((e) => {
+    const todayAtt = e.attendances?.find((a) => a.date === todayStr);
+    return !todayAtt || todayAtt.status === "not_marked";
   }).length;
 
   return (
@@ -1069,13 +1086,14 @@ function DashboardView() {
       </div>
 
       {/* Stats cards */}
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-6 gap-3">
         {[
           { label: "Total Employees", value: employees.length, icon: Users, bgClass: "bg-emerald-100 dark:bg-emerald-900/30", iconClass: "text-emerald-600 dark:text-emerald-400" },
           { label: "Present Today", value: presentToday, icon: CheckCircle2, bgClass: "bg-green-100 dark:bg-green-900/30", iconClass: "text-green-600 dark:text-green-400" },
           { label: "Absent Today", value: absentToday, icon: XCircle, bgClass: "bg-red-100 dark:bg-red-900/30", iconClass: "text-red-600 dark:text-red-400" },
           { label: "No Site Today", value: noSiteToday, icon: MinusCircle, bgClass: "bg-gray-100 dark:bg-gray-800/30", iconClass: "text-gray-600 dark:text-gray-400" },
           { label: "Overtime Today", value: overtimeToday, icon: Clock, bgClass: "bg-blue-100 dark:bg-blue-900/30", iconClass: "text-blue-600 dark:text-blue-400" },
+          { label: "Not Marked", value: notMarkedToday, icon: Eye, bgClass: "bg-amber-100 dark:bg-amber-900/30", iconClass: "text-amber-600 dark:text-amber-400" },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}
@@ -1382,10 +1400,12 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
       const dateStr = `${dd}-${mm}-${selectedYear}`;
       const att = attendanceMap[dateStr];
       if (!att) unmarked++;
+      else if (att.status === "present" && att.overtimeHours && att.overtimeHours > 0) { overtime++; totalOvertimeHours += (att.overtimeHours || 0); }
       else if (att.status === "present") present++;
       else if (att.status === "absent") absent++;
       else if (att.status === "no_site") noSite++;
       else if (att.status === "overtime") { overtime++; totalOvertimeHours += (att.overtimeHours || 0); }
+      else if (att.status === "not_marked") unmarked++;
       else unmarked++;
     }
     return { present, absent, noSite, overtime, totalOvertimeHours, unmarked };
@@ -1394,7 +1414,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
   // Handle marking attendance on a day
   const handleMarkAttendance = async (dateStr: string, dayName: string, status: string, overtimeHours?: number) => {
     try {
-      await fetch("/api/attendance", {
+      const res = await fetch("/api/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1406,6 +1426,10 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
           overtimeHours: status === "overtime" ? overtimeHours || 0 : undefined,
         }),
       });
+      if (res.ok) {
+        const label = status === "overtime" ? `OT: ${overtimeHours || 0}h (Present)` : status === "no_site" ? "No Site" : status.charAt(0).toUpperCase() + status.slice(1);
+        toast.success(`Marked ${label}`);
+      }
       setActiveDay(null);
       setShowOvertimeInput(false);
       setOvertimeInput("");
@@ -1487,7 +1511,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-sm bg-white dark:bg-slate-600 inline-block border border-gray-300 dark:border-slate-500" />
-            Unmarked: {monthStats.unmarked}
+            Unmarked/Not Marked: {monthStats.unmarked}
           </span>
         </div>
       </div>
@@ -1507,11 +1531,12 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
         <div className="grid grid-cols-7 relative">
           {calendarDays.map((dayInfo, idx) => {
             const isToday = dayInfo.dateStr === todayStr && dayInfo.isCurrentMonth;
-            const isPresent = dayInfo.status === "present";
+            const hasOvertime = dayInfo.status === "present" && dayInfo.overtimeHours && dayInfo.overtimeHours > 0;
+            const isPresent = dayInfo.status === "present" && !hasOvertime;
             const isAbsent = dayInfo.status === "absent";
             const isNoSite = dayInfo.status === "no_site";
-            const isOvertime = dayInfo.status === "overtime";
-            const isUnmarked = !dayInfo.status && dayInfo.isCurrentMonth;
+            const isOvertime = dayInfo.status === "overtime" || hasOvertime;
+            const isNotMarked = dayInfo.status === "not_marked" || (!dayInfo.status && dayInfo.isCurrentMonth);
             const isActive = activeDay === dayInfo.dateStr;
 
             // Background color logic
@@ -1520,6 +1545,9 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
             if (!dayInfo.isCurrentMonth) {
               cellBg = "bg-gray-50/60 dark:bg-slate-800/40";
               dayNumColor = "text-gray-300 dark:text-gray-600";
+            } else if (isOvertime) {
+              cellBg = "bg-blue-50 dark:bg-blue-950/30 print:bg-blue-50";
+              dayNumColor = "text-blue-700 dark:text-blue-400 print:text-blue-700";
             } else if (isPresent) {
               cellBg = "bg-emerald-50 dark:bg-emerald-950/40 print:bg-emerald-50";
               dayNumColor = "text-emerald-700 dark:text-emerald-300 print:text-emerald-700";
@@ -1529,9 +1557,6 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
             } else if (isNoSite) {
               cellBg = "bg-gray-100 dark:bg-slate-700/50 print:bg-gray-100";
               dayNumColor = "text-gray-600 dark:text-gray-400 print:text-gray-600";
-            } else if (isOvertime) {
-              cellBg = "bg-blue-50 dark:bg-blue-950/30 print:bg-blue-50";
-              dayNumColor = "text-blue-700 dark:text-blue-400 print:text-blue-700";
             } else {
               cellBg = "bg-white dark:bg-slate-800 print:bg-white";
               dayNumColor = "text-gray-700 dark:text-gray-300 print:text-gray-700";
@@ -1539,10 +1564,10 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
 
             // Left accent bar color
             let accentColor = "";
-            if (dayInfo.isCurrentMonth && isPresent) accentColor = "bg-emerald-500";
+            if (dayInfo.isCurrentMonth && isOvertime) accentColor = "bg-blue-500";
+            else if (dayInfo.isCurrentMonth && isPresent) accentColor = "bg-emerald-500";
             else if (dayInfo.isCurrentMonth && isAbsent) accentColor = "bg-red-500";
             else if (dayInfo.isCurrentMonth && isNoSite) accentColor = "bg-gray-400";
-            else if (dayInfo.isCurrentMonth && isOvertime) accentColor = "bg-blue-500";
 
             return (
               <div
@@ -1574,7 +1599,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
                 </div>
 
                 {/* Status indicator */}
-                {dayInfo.isCurrentMonth && isPresent && (
+                {dayInfo.isCurrentMonth && isPresent && !isOvertime && (
                   <div className="pl-1.5 mt-0.5 flex items-center gap-1">
                     <CheckCircle2 className="h-3 w-3 text-emerald-500 dark:text-emerald-400" />
                     <span className="text-[8px] text-emerald-600 dark:text-emerald-400 font-medium">P</span>
@@ -1596,6 +1621,12 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
                   <div className="pl-1.5 mt-0.5 flex items-center gap-1">
                     <Clock className="h-3 w-3 text-blue-500 dark:text-blue-400" />
                     <span className="text-[8px] text-blue-600 dark:text-blue-400 font-medium">OT: {dayInfo.overtimeHours || 0}h</span>
+                  </div>
+                )}
+                {dayInfo.isCurrentMonth && isNotMarked && (
+                  <div className="pl-1.5 mt-0.5 flex items-center gap-1">
+                    <MinusCircle className="h-3 w-3 text-gray-300 dark:text-gray-500" />
+                    <span className="text-[8px] text-gray-400 dark:text-gray-500 font-medium">NM</span>
                   </div>
                 )}
 
@@ -1622,10 +1653,10 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
                         {opt.label}
                       </button>
                     ))}
-                    {/* Overtime option */}
+                    {/* Overtime option - auto-sets as present */}
                     {!showOvertimeInput ? (
                       <button
-                        className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-[11px] font-medium text-white bg-blue-500 hover:bg-blue-600 transition-colors my-1 ${dayInfo.status === "overtime" ? "ring-2 ring-offset-1 ring-white/70 dark:ring-offset-slate-700" : ""}`}
+                        className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-[11px] font-medium text-white bg-blue-500 hover:bg-blue-600 transition-colors my-1 ${isOvertime ? "ring-2 ring-offset-1 ring-white/70 dark:ring-offset-slate-700" : ""}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           setShowOvertimeInput(true);
@@ -1680,7 +1711,7 @@ function AttendanceCalendar({ employeeId }: { employeeId: string }) {
 
       {editMode && (
         <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2 italic">
-          Click on any date to mark attendance: Present (green), Absent (red), No Site (grey), or Overtime (blue)
+          Click on any date to mark attendance: Present (green), Absent (red), No Site (grey), or Overtime (blue, auto-sets as Present)
         </p>
       )}
     </div>
@@ -2967,6 +2998,7 @@ function NotificationsView() {
   const [warningReason, setWarningReason] = useState("");
   const [warningSaving, setWarningSaving] = useState(false);
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
+  const [warningMonthFilter, setWarningMonthFilter] = useState<string>("all");
 
   // Tab: Fines
   const [fines, setFines] = useState<FineItem[]>([]);
@@ -2976,6 +3008,7 @@ function NotificationsView() {
   const [fineReason, setFineReason] = useState("");
   const [fineAmount, setFineAmount] = useState("");
   const [fineSaving, setFineSaving] = useState(false);
+  const [fineMonthFilter, setFineMonthFilter] = useState<string>("all");
 
   // Refs for scrolling to highlighted items
   const warningRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -3011,7 +3044,13 @@ function NotificationsView() {
   // Fetch warnings
   const fetchWarnings = useCallback(async () => {
     try {
-      const res = await fetch("/api/warnings");
+      const params = new URLSearchParams();
+      if (warningMonthFilter !== "all") {
+        const [year, month] = warningMonthFilter.split("-");
+        params.set("month", month);
+        params.set("year", year);
+      }
+      const res = await fetch(`/api/warnings?${params}`);
       if (res.ok) {
         const data = await res.json();
         setWarnings(data);
@@ -3021,12 +3060,18 @@ function NotificationsView() {
     } finally {
       setWarningsLoading(false);
     }
-  }, []);
+  }, [warningMonthFilter]);
 
   // Fetch fines
   const fetchFines = useCallback(async () => {
     try {
-      const res = await fetch("/api/fines");
+      const params = new URLSearchParams();
+      if (fineMonthFilter !== "all") {
+        const [year, month] = fineMonthFilter.split("-");
+        params.set("month", month);
+        params.set("year", year);
+      }
+      const res = await fetch(`/api/fines?${params}`);
       if (res.ok) {
         const data = await res.json();
         setFines(data);
@@ -3036,7 +3081,7 @@ function NotificationsView() {
     } finally {
       setFinesLoading(false);
     }
-  }, []);
+  }, [fineMonthFilter]);
 
   useEffect(() => {
     fetchRequests();
@@ -3098,6 +3143,22 @@ function NotificationsView() {
       }
     } catch {
       toast.error("Failed to update request");
+    }
+  };
+
+  const handleMarkRequestRead = async (id: string) => {
+    try {
+      const res = await fetch("/api/delete-requests", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, read: true }),
+      });
+      if (res.ok) {
+        setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, read: true } : r)));
+        toast.success("Marked as read");
+      }
+    } catch {
+      toast.error("Failed to mark as read");
     }
   };
 
@@ -3223,14 +3284,27 @@ function NotificationsView() {
   // Count unread for badge
   const unreadWarnings = warnings.filter((w) => !w.read).length;
   const unreadFines = fines.filter((f) => !f.read).length;
-  const pendingRequests = requests.filter((r) => r.status === "pending").length;
+  const unreadRequests = requests.filter((r) => !r.read && r.status === "pending").length;
+
+  // Generate month options for filter (last 12 months)
+  const monthOptions = useMemo(() => {
+    const options: { value: string; label: string }[] = [{ value: "all", label: "All Months" }];
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+      options.push({ value, label });
+    }
+    return options;
+  }, []);
 
   const tabs = [
     {
       key: "requests" as const,
       label: "Requests",
       icon: Shield,
-      count: pendingRequests,
+      count: unreadRequests,
       countClass: "bg-amber-500",
     },
     {
@@ -3346,6 +3420,9 @@ function NotificationsView() {
                                 >
                                   {req.status}
                                 </Badge>
+                                {req.status === "pending" && !(req as any).read && (
+                                  <Badge className="bg-amber-500 text-white text-[10px]">NEW</Badge>
+                                )}
                               </div>
                               {req.reason && (
                                 <p className="text-xs text-muted-foreground mt-1">Reason: {req.reason}</p>
@@ -3353,7 +3430,18 @@ function NotificationsView() {
                               <p className="text-[10px] text-muted-foreground mt-1">{formatDateTime(req.createdAt)}</p>
                             </div>
                             {req.status === "pending" && user?.role === "super_admin" && (
-                              <div className="flex gap-2">
+                              <div className="flex gap-2 flex-wrap">
+                                {!(req as any).read && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-amber-700 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-800"
+                                    onClick={() => handleMarkRequestRead(req.id)}
+                                  >
+                                    <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                                    Mark as Read
+                                  </Button>
+                                )}
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -3403,8 +3491,20 @@ function NotificationsView() {
             exit={{ opacity: 0, y: -10 }}
             className="space-y-4"
           >
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Warning Notices</h3>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-3">
+                <h3 className="text-lg font-semibold">Warning Notices</h3>
+                <Select value={warningMonthFilter} onValueChange={setWarningMonthFilter}>
+                  <SelectTrigger className="w-44 h-8 text-xs">
+                    <SelectValue placeholder="All Months" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {monthOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <Button
                 onClick={() => setCreateWarningOpen(true)}
                 className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white shadow-md"
@@ -3660,8 +3760,20 @@ function NotificationsView() {
             exit={{ opacity: 0, y: -10 }}
             className="space-y-4"
           >
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Fine Notices</h3>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-3">
+                <h3 className="text-lg font-semibold">Fine Notices</h3>
+                <Select value={fineMonthFilter} onValueChange={setFineMonthFilter}>
+                  <SelectTrigger className="w-44 h-8 text-xs">
+                    <SelectValue placeholder="All Months" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {monthOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <Button
                 onClick={() => setCreateFineOpen(true)}
                 className="bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white shadow-md"
@@ -4034,6 +4146,10 @@ function NotificationPopups() {
   // Delete request popups state
   const [popupDeleteRequests, setPopupDeleteRequests] = useState<DeleteRequestItem[]>([]);
 
+  // Reminder state - for 5-min interval reminders
+  const [showReminder, setShowReminder] = useState(false);
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+
   // Poll for unread warnings and fines + pending delete requests every 15 seconds
   useEffect(() => {
     if (!isSuperAdmin) return;
@@ -4043,7 +4159,7 @@ function NotificationPopups() {
         const [warnRes, fineRes, reqRes] = await Promise.all([
           fetch("/api/warnings?read=false"),
           fetch("/api/fines?read=false"),
-          fetch("/api/delete-requests?status=pending"),
+          fetch("/api/delete-requests?status=pending&read=false"),
         ]);
 
         if (warnRes.ok) {
@@ -4079,125 +4195,230 @@ function NotificationPopups() {
     return () => clearInterval(interval);
   }, [isSuperAdmin, setPopupWarnings, setPopupFines]);
 
+  // 5-minute reminder interval for unread notifications
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+
+    const totalUnread = popupDeleteRequests.length + popupWarnings.length + popupFines.length;
+
+    if (totalUnread === 0) {
+      setShowReminder(false);
+      return;
+    }
+
+    // Show reminder popup every 5 minutes
+    const reminderInterval = setInterval(() => {
+      const currentUnread = popupDeleteRequests.length + popupWarnings.length + popupFines.length;
+      if (currentUnread > 0) {
+        setShowReminder(true);
+        // Auto-hide after 10 seconds
+        setTimeout(() => setShowReminder(false), 10000);
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+
+    return () => clearInterval(reminderInterval);
+  }, [isSuperAdmin, popupDeleteRequests.length, popupWarnings.length, popupFines.length]);
+
   if (!isSuperAdmin) return null;
 
   const allPopups = [
-    ...popupDeleteRequests.map((r) => ({ ...r, type: "request" as const })),
-    ...popupWarnings.map((w) => ({ ...w, type: "warning" as const })),
-    ...popupFines.map((f) => ({ ...f, type: "fine" as const })),
+    ...popupDeleteRequests.filter((r) => !dismissedIds.has(`request-${r.id}`)).map((r) => ({ ...r, type: "request" as const })),
+    ...popupWarnings.filter((w) => !dismissedIds.has(`warning-${w.id}`)).map((w) => ({ ...w, type: "warning" as const })),
+    ...popupFines.filter((f) => !dismissedIds.has(`fine-${f.id}`)).map((f) => ({ ...f, type: "fine" as const })),
   ];
 
-  if (allPopups.length === 0) return null;
+  const totalUnread = popupDeleteRequests.length + popupWarnings.length + popupFines.length;
 
   return (
-    <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+    <>
+      {/* Regular popups */}
+      {allPopups.length > 0 && (
+        <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+          <AnimatePresence>
+            {allPopups.slice(0, 3).map((item) => (
+              <motion.div
+                key={`${item.type}-${item.id}`}
+                initial={{ opacity: 0, x: 100, scale: 0.9 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, x: 100, scale: 0.9 }}
+                transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                className="pointer-events-auto"
+              >
+                <div className={`rounded-xl shadow-2xl border-2 overflow-hidden ${
+                  item.type === "request"
+                    ? "bg-amber-50 dark:bg-amber-950/90 border-amber-400 dark:border-amber-700"
+                    : item.type === "warning"
+                    ? "bg-amber-50 dark:bg-amber-950/90 border-amber-400 dark:border-amber-700"
+                    : "bg-red-50 dark:bg-red-950/90 border-red-400 dark:border-red-700"
+                }`}>
+                  {/* Popup Header */}
+                  <div className={`px-4 py-2.5 flex items-center gap-2 ${
+                    item.type === "request"
+                      ? "bg-gradient-to-r from-amber-500 to-amber-600 text-white"
+                      : item.type === "warning"
+                      ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white"
+                      : "bg-gradient-to-r from-red-500 to-rose-500 text-white"
+                  }`}>
+                    {item.type === "request" ? (
+                      <Shield className="h-4 w-4 flex-shrink-0" />
+                    ) : item.type === "warning" ? (
+                      <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                    ) : (
+                      <DollarSign className="h-4 w-4 flex-shrink-0" />
+                    )}
+                    <span className="text-xs font-bold tracking-wider uppercase">
+                      {item.type === "request" ? "Delete Request" : item.type === "warning" ? "New Warning" : "New Fine"}
+                    </span>
+                  </div>
+                  {/* Popup Body */}
+                  <div className="px-4 py-3">
+                    <p className="text-sm font-semibold truncate">
+                      {item.type === "request" ? (item as DeleteRequestItem).employeeName : (item as WarningItem | FineItem).employeeName}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                      {item.type === "request"
+                        ? `Deletion requested${(item as DeleteRequestItem).reason ? `: ${(item as DeleteRequestItem).reason}` : ""}`
+                        : (item as WarningItem | FineItem).reason}
+                    </p>
+                    {item.type === "fine" && (
+                      <p className="text-sm font-bold text-red-700 dark:text-red-400 mt-1">
+                        {(item as FineItem).amount.toLocaleString("en-SA", { minimumFractionDigits: 2 })} SAR
+                      </p>
+                    )}
+                    <div className="mt-3 flex gap-2">
+                      <Button
+                        size="sm"
+                        className={`text-xs h-7 ${
+                          item.type === "request"
+                            ? "bg-amber-600 hover:bg-amber-700 text-white"
+                            : item.type === "warning"
+                            ? "bg-amber-600 hover:bg-amber-700 text-white"
+                            : "bg-red-600 hover:bg-red-700 text-white"
+                        }`}
+                        onClick={() => {
+                          if (item.type === "request") {
+                            const req = item as DeleteRequestItem;
+                            // Mark as read
+                            fetch("/api/delete-requests", {
+                              method: "PUT",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ id: req.id, read: true }),
+                            }).catch(() => {});
+                            setSelectedEmployee(req.employeeId);
+                            setPendingDeleteRequest(req.id, req.employeeId);
+                            setView("employee-detail");
+                          } else if (item.type === "warning") {
+                            // Mark as read
+                            fetch("/api/warnings", {
+                              method: "PUT",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ id: item.id, read: true }),
+                            }).catch(() => {});
+                            setPopupWarnings(popupWarnings.filter((w) => w.id !== item.id));
+                            setView("notifications");
+                            setNotificationsTab("warnings");
+                            setHighlightWarning(item.id);
+                          } else {
+                            // Mark as read
+                            fetch("/api/fines", {
+                              method: "PUT",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ id: item.id, read: true }),
+                            }).catch(() => {});
+                            setPopupFines(popupFines.filter((f) => f.id !== item.id));
+                            setView("notifications");
+                            setNotificationsTab("fines");
+                            setHighlightFine(item.id);
+                          }
+                        }}
+                      >
+                        View
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-xs h-7"
+                        onClick={async () => {
+                          if (item.type === "request") {
+                            await fetch("/api/delete-requests", {
+                              method: "PUT",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ id: item.id, read: true }),
+                            }).catch(() => {});
+                            setPopupDeleteRequests(popupDeleteRequests.filter((r) => r.id !== item.id));
+                          } else if (item.type === "warning") {
+                            try {
+                              await fetch("/api/warnings", {
+                                method: "PUT",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ id: item.id, read: true }),
+                              });
+                              setPopupWarnings(popupWarnings.filter((w) => w.id !== item.id));
+                            } catch {}
+                          } else {
+                            try {
+                              await fetch("/api/fines", {
+                                method: "PUT",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ id: item.id, read: true }),
+                              });
+                              setPopupFines(popupFines.filter((f) => f.id !== item.id));
+                            } catch {}
+                          }
+                        }}
+                      >
+                        Dismiss
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* 5-minute Reminder Popup */}
       <AnimatePresence>
-        {allPopups.map((item) => (
+        {showReminder && totalUnread > 0 && (
           <motion.div
-            key={`${item.type}-${item.id}`}
-            initial={{ opacity: 0, x: 100, scale: 0.9 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: 100, scale: 0.9 }}
+            initial={{ opacity: 0, y: -50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -50, scale: 0.9 }}
             transition={{ type: "spring", stiffness: 300, damping: 25 }}
-            className="pointer-events-auto"
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-[10000]"
           >
-            <div className={`rounded-xl shadow-2xl border-2 overflow-hidden ${
-              item.type === "request"
-                ? "bg-amber-50 dark:bg-amber-950/90 border-amber-400 dark:border-amber-700"
-                : item.type === "warning"
-                ? "bg-amber-50 dark:bg-amber-950/90 border-amber-400 dark:border-amber-700"
-                : "bg-red-50 dark:bg-red-950/90 border-red-400 dark:border-red-700"
-            }`}>
-              {/* Popup Header */}
-              <div className={`px-4 py-2.5 flex items-center gap-2 ${
-                item.type === "request"
-                  ? "bg-gradient-to-r from-amber-500 to-amber-600 text-white"
-                  : item.type === "warning"
-                  ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white"
-                  : "bg-gradient-to-r from-red-500 to-rose-500 text-white"
-              }`}>
-                {item.type === "request" ? (
-                  <Shield className="h-4 w-4 flex-shrink-0" />
-                ) : item.type === "warning" ? (
-                  <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                ) : (
-                  <DollarSign className="h-4 w-4 flex-shrink-0" />
-                )}
-                <span className="text-xs font-bold tracking-wider uppercase">
-                  {item.type === "request" ? "Delete Request" : item.type === "warning" ? "New Warning" : "New Fine"}
-                </span>
-              </div>
-              {/* Popup Body */}
-              <div className="px-4 py-3">
-                <p className="text-sm font-semibold truncate">
-                  {item.type === "request" ? (item as DeleteRequestItem).employeeName : (item as WarningItem | FineItem).employeeName}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                  {item.type === "request"
-                    ? `Deletion requested${(item as DeleteRequestItem).reason ? `: ${(item as DeleteRequestItem).reason}` : ""}`
-                    : (item as WarningItem | FineItem).reason}
-                </p>
-                {item.type === "fine" && (
-                  <p className="text-sm font-bold text-red-700 dark:text-red-400 mt-1">
-                    {(item as FineItem).amount.toLocaleString("en-SA", { minimumFractionDigits: 2 })} SAR
+            <div className="bg-gradient-to-r from-amber-500 to-red-500 text-white rounded-xl shadow-2xl border-2 border-amber-400 px-6 py-4 max-w-md w-full">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                  <Bell className="h-5 w-5 animate-bounce" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-bold text-sm">You have {totalUnread} unread notification{totalUnread > 1 ? "s" : ""}</p>
+                  <p className="text-xs text-white/80 mt-0.5">
+                    {popupDeleteRequests.length > 0 && `${popupDeleteRequests.length} request${popupDeleteRequests.length > 1 ? "s" : ""}`}
+                    {popupDeleteRequests.length > 0 && (popupWarnings.length > 0 || popupFines.length > 0) ? ", " : ""}
+                    {popupWarnings.length > 0 && `${popupWarnings.length} warning${popupWarnings.length > 1 ? "s" : ""}`}
+                    {popupWarnings.length > 0 && popupFines.length > 0 ? ", " : ""}
+                    {popupFines.length > 0 && `${popupFines.length} fine${popupFines.length > 1 ? "s" : ""}`}
                   </p>
-                )}
-                <div className="mt-3 flex gap-2">
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
                   <Button
                     size="sm"
-                    className={`text-xs h-7 ${
-                      item.type === "request"
-                        ? "bg-amber-600 hover:bg-amber-700 text-white"
-                        : item.type === "warning"
-                        ? "bg-amber-600 hover:bg-amber-700 text-white"
-                        : "bg-red-600 hover:bg-red-700 text-white"
-                    }`}
+                    className="bg-white text-amber-700 hover:bg-white/90 h-7 text-xs"
                     onClick={() => {
-                      if (item.type === "request") {
-                        const req = item as DeleteRequestItem;
-                        setSelectedEmployee(req.employeeId);
-                        setPendingDeleteRequest(req.id, req.employeeId);
-                        setView("employee-detail");
-                      } else if (item.type === "warning") {
-                        setView("notifications");
-                        setNotificationsTab("warnings");
-                        setHighlightWarning(item.id);
-                      } else {
-                        setView("notifications");
-                        setNotificationsTab("fines");
-                        setHighlightFine(item.id);
-                      }
+                      setShowReminder(false);
+                      setView("notifications");
                     }}
                   >
-                    View
+                    View All
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="text-xs h-7"
-                    onClick={async () => {
-                      if (item.type === "request") {
-                        setPopupDeleteRequests(popupDeleteRequests.filter((r) => r.id !== item.id));
-                      } else if (item.type === "warning") {
-                        try {
-                          await fetch("/api/warnings", {
-                            method: "PUT",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ id: item.id, read: true }),
-                          });
-                          setPopupWarnings(popupWarnings.filter((w) => w.id !== item.id));
-                        } catch {}
-                      } else {
-                        try {
-                          await fetch("/api/fines", {
-                            method: "PUT",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ id: item.id, read: true }),
-                          });
-                          setPopupFines(popupFines.filter((f) => f.id !== item.id));
-                        } catch {}
-                      }
-                    }}
+                    className="text-white hover:bg-white/20 h-7 text-xs"
+                    onClick={() => setShowReminder(false)}
                   >
                     Dismiss
                   </Button>
@@ -4205,9 +4426,9 @@ function NotificationPopups() {
               </div>
             </div>
           </motion.div>
-        ))}
+        )}
       </AnimatePresence>
-    </div>
+    </>
   );
 }
 

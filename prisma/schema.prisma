@@ -56,7 +56,7 @@ model Attendance {
   employeeId     String
   date           String   // DD-MM-YYYY (e.g. 27-04-2026)
   dayName        String?  // e.g. Monday
-  status         String   @default("present") // present, absent, no_site, overtime
+  status         String   @default("not_marked") // present, absent, no_site, overtime, not_marked
   overtimeHours  Float?   // Hours worked as overtime (only when status = overtime)
   markedBy       String?
   createdAt      DateTime @default(now())
@@ -74,6 +74,7 @@ model DeleteRequest {
   reason      String?
   status      String   @default("pending") // pending, approved, rejected
   reviewedBy  String?
+  read        Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

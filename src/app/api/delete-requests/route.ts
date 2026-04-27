@@ -5,9 +5,13 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const status = searchParams.get("status") || "";
+    const readFilter = searchParams.get("read");
 
     const where: Record<string, unknown> = {};
     if (status) where.status = status;
+    if (readFilter !== null && readFilter !== "") {
+      where.read = readFilter === "true";
+    }
 
     const requests = await db.deleteRequest.findMany({
       where,
@@ -47,11 +51,21 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, status, reviewedBy } = body;
+    const { id, status, reviewedBy, read } = body;
+
+    const data: Record<string, unknown> = {};
+    if (status !== undefined) {
+      data.status = status;
+      data.reviewedBy = reviewedBy;
+      data.updatedAt = new Date();
+    }
+    if (read !== undefined) {
+      data.read = read;
+    }
 
     const deleteRequest = await db.deleteRequest.update({
       where: { id },
-      data: { status, reviewedBy, updatedAt: new Date() },
+      data,
     });
 
     // If approved, soft-delete the employee
@@ -62,15 +76,17 @@ export async function PUT(request: NextRequest) {
       });
     }
 
-    // Notify the requester
-    await db.notification.create({
-      data: {
-        userId: deleteRequest.requestedBy,
-        title: `Delete Request ${status === "approved" ? "Approved" : "Rejected"}`,
-        message: `Your request to delete ${deleteRequest.employeeName} has been ${status}`,
-        type: status === "approved" ? "success" : "danger",
-      },
-    });
+    // Notify the requester only when status changes
+    if (status) {
+      await db.notification.create({
+        data: {
+          userId: deleteRequest.requestedBy,
+          title: `Delete Request ${status === "approved" ? "Approved" : "Rejected"}`,
+          message: `Your request to delete ${deleteRequest.employeeName} has been ${status}`,
+          type: status === "approved" ? "success" : "danger",
+        },
+      });
+    }
 
     return NextResponse.json(deleteRequest);
   } catch (error) {

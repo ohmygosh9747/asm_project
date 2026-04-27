@@ -38,10 +38,24 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const readFilter = searchParams.get("read");
+    const month = searchParams.get("month"); // 1-12
+    const year = searchParams.get("year");   // e.g. 2026
 
     const where: Record<string, unknown> = {};
     if (readFilter !== null && readFilter !== "") {
       where.read = readFilter === "true";
+    }
+
+    // Filter by month/year using createdAt
+    if (month && year) {
+      const mm = parseInt(month) - 1; // JS months are 0-indexed
+      const yyyy = parseInt(year);
+      const startDate = new Date(yyyy, mm, 1);
+      const endDate = new Date(yyyy, mm + 1, 1);
+      where.createdAt = {
+        gte: startDate,
+        lt: endDate,
+      };
     }
 
     const warnings = await db.warning.findMany({
