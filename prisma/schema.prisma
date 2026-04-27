@@ -52,7 +52,8 @@ model Employee {
 model Attendance {
   id          String   @id @default(cuid())
   employeeId  String
-  date        String   // YYYY-MM-DD
+  date        String   // DD-MM-YYYY (e.g. 27-04-2026)
+  dayName     String?  // e.g. Monday
   status      String   @default("present") // present, absent
   markedBy    String?
   createdAt   DateTime @default(now())

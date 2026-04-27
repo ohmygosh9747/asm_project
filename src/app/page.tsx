@@ -31,6 +31,7 @@ import {
   CalendarDays,
   Menu,
   Edit,
+  Pencil,
   Building2,
   Globe,
   Award,
@@ -103,6 +104,7 @@ interface Attendance {
   id: string;
   employeeId: string;
   date: string;
+  dayName: string | null;
   status: string;
   markedBy: string | null;
   createdAt: string;
@@ -198,10 +200,22 @@ function formatDateTime(dateStr: string): string {
   }
 }
 
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
 function getDateStr(daysAgo: number): string {
   const d = new Date();
   d.setDate(d.getDate() - daysAgo);
-  return d.toISOString().split("T")[0];
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+}
+
+function getDayNameFromDateStr(dateStr: string): string {
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return "Unknown";
+  const d = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+  return DAY_NAMES[d.getDay()];
 }
 
 function getDayLabel(daysAgo: number): string {
@@ -653,8 +667,9 @@ function EmployeeRow({
   const handleAttendanceClick = async (daysAgo: number, e: React.MouseEvent) => {
     e.stopPropagation();
     const current = getAttendanceForDay(daysAgo);
-    const currentStatus = current?.status || "present";
-    const nextStatus = currentStatus === "present" ? "absent" : "present";
+    // Match visual default: today defaults to absent if no record, other days default to present
+    const visualStatus = current?.status || (daysAgo === 0 ? "absent" : "present");
+    const nextStatus = visualStatus === "present" ? "absent" : "present";
     const dateStr = getDateStr(daysAgo);
 
     try {
@@ -664,6 +679,7 @@ function EmployeeRow({
         body: JSON.stringify({
           employeeId: employee.id,
           date: dateStr,
+          dayName: getDayNameFromDateStr(dateStr),
           status: nextStatus,
           markedBy: user?.name || "System",
         }),
@@ -1059,6 +1075,295 @@ function DashboardView() {
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// ATTENDANCE CALENDAR COMPONENT
+// ============================================================
+
+const CALENDAR_MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+function AttendanceCalendar({ employeeId }: { employeeId: string }) {
+  const { user } = useAppStore();
+  const now = new Date();
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1); // 1-12
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, { status: string; id: string; dayName: string }>>({});
+  const [editMode, setEditMode] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // Generate year options (5 years back + current year)
+  const yearOptions = useMemo(() => {
+    const years: number[] = [];
+    for (let y = now.getFullYear(); y >= now.getFullYear() - 5; y--) years.push(y);
+    return years;
+  }, []);
+
+  // Fetch attendance for the selected month/year
+  const fetchAttendance = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/attendance?employeeId=${employeeId}&month=${selectedMonth}&year=${selectedYear}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const map: Record<string, { status: string; id: string; dayName: string }> = {};
+        data.forEach((a: any) => {
+          // a.date is in DD-MM-YYYY format
+          map[a.date] = { status: a.status, id: a.id, dayName: a.dayName || "" };
+        });
+        setAttendanceMap(map);
+      }
+    } catch {
+      toast.error("Failed to load attendance");
+    } finally {
+      setLoading(false);
+    }
+  }, [employeeId, selectedMonth, selectedYear]);
+
+  useEffect(() => {
+    fetchAttendance();
+  }, [fetchAttendance]);
+
+  // Build calendar grid for the selected month/year
+  const calendarDays = useMemo(() => {
+    const days: { day: number; dateStr: string; dayName: string; status: string | null; attendanceId: string | null; isCurrentMonth: boolean }[] = [];
+    const firstDay = new Date(selectedYear, selectedMonth - 1, 1);
+    const lastDay = new Date(selectedYear, selectedMonth, 0);
+    const totalDays = lastDay.getDate();
+    const startDow = firstDay.getDay(); // 0=Sun
+
+    // Previous month padding
+    const prevMonthLast = new Date(selectedYear, selectedMonth - 1, 0).getDate();
+    for (let i = startDow - 1; i >= 0; i--) {
+      const d = prevMonthLast - i;
+      const pm = selectedMonth - 1 === 0 ? 12 : selectedMonth - 1;
+      const py = selectedMonth - 1 === 0 ? selectedYear - 1 : selectedYear;
+      const dd = String(d).padStart(2, "0");
+      const mm = String(pm).padStart(2, "0");
+      const dateStr = `${dd}-${mm}-${py}`;
+      days.push({ day: d, dateStr, dayName: getDayNameFromDateStr(dateStr), status: null, attendanceId: null, isCurrentMonth: false });
+    }
+
+    // Current month days
+    for (let d = 1; d <= totalDays; d++) {
+      const dd = String(d).padStart(2, "0");
+      const mm = String(selectedMonth).padStart(2, "0");
+      const dateStr = `${dd}-${mm}-${selectedYear}`;
+      const att = attendanceMap[dateStr];
+      days.push({
+        day: d,
+        dateStr,
+        dayName: getDayNameFromDateStr(dateStr),
+        status: att?.status || null,
+        attendanceId: att?.id || null,
+        isCurrentMonth: true,
+      });
+    }
+
+    // Next month padding to fill 6 rows
+    const remaining = 42 - days.length;
+    for (let d = 1; d <= remaining; d++) {
+      const nm = selectedMonth + 1 === 13 ? 1 : selectedMonth + 1;
+      const ny = selectedMonth + 1 === 13 ? selectedYear + 1 : selectedYear;
+      const dd = String(d).padStart(2, "0");
+      const mm = String(nm).padStart(2, "0");
+      const dateStr = `${dd}-${mm}-${ny}`;
+      days.push({ day: d, dateStr, dayName: getDayNameFromDateStr(dateStr), status: null, attendanceId: null, isCurrentMonth: false });
+    }
+
+    return days;
+  }, [selectedYear, selectedMonth, attendanceMap]);
+
+  // Count present/absent for current month
+  const monthStats = useMemo(() => {
+    let present = 0;
+    let absent = 0;
+    let unmarked = 0;
+    const totalDays = new Date(selectedYear, selectedMonth, 0).getDate();
+    for (let d = 1; d <= totalDays; d++) {
+      const dd = String(d).padStart(2, "0");
+      const mm = String(selectedMonth).padStart(2, "0");
+      const dateStr = `${dd}-${mm}-${selectedYear}`;
+      const att = attendanceMap[dateStr];
+      if (!att) unmarked++;
+      else if (att.status === "present") present++;
+      else absent++;
+    }
+    return { present, absent, unmarked };
+  }, [selectedYear, selectedMonth, attendanceMap]);
+
+  // Handle clicking a day in edit mode
+  const handleDayClick = async (dayInfo: typeof calendarDays[0]) => {
+    if (!editMode || !dayInfo.isCurrentMonth) return;
+
+    const currentStatus = dayInfo.status;
+    // Cycle: unmarked -> present -> absent -> present -> absent ...
+    let nextStatus: string;
+    if (!currentStatus) {
+      nextStatus = "present";
+    } else if (currentStatus === "present") {
+      nextStatus = "absent";
+    } else {
+      nextStatus = "present";
+    }
+
+    try {
+      await fetch("/api/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeId,
+          date: dayInfo.dateStr,
+          dayName: dayInfo.dayName,
+          status: nextStatus,
+          markedBy: user?.name || "System",
+        }),
+      });
+      fetchAttendance();
+    } catch {
+      toast.error("Failed to update attendance");
+    }
+  };
+
+  // Is today in the selected month?
+  const todayStr = (() => {
+    const d = new Date();
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yyyy = d.getFullYear();
+    return `${dd}-${mm}-${yyyy}`;
+  })();
+
+  return (
+    <div className="mb-2">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-[11px] font-bold tracking-[0.2em] uppercase text-emerald-600 pb-1.5 border-b-2 border-emerald-600 flex-1">
+          Attendance Record
+        </h3>
+      </div>
+
+      {/* Year & Month selectors + Edit button */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <Select value={String(selectedYear)} onValueChange={(v) => setSelectedYear(Number(v))}>
+          <SelectTrigger className="w-[120px] h-8 text-xs">
+            <SelectValue placeholder="Year" />
+          </SelectTrigger>
+          <SelectContent>
+            {yearOptions.map((y) => (
+              <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={String(selectedMonth)} onValueChange={(v) => setSelectedMonth(Number(v))}>
+          <SelectTrigger className="w-[140px] h-8 text-xs">
+            <SelectValue placeholder="Month" />
+          </SelectTrigger>
+          <SelectContent>
+            {CALENDAR_MONTHS.map((m, i) => (
+              <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Edit toggle */}
+        <Button
+          variant={editMode ? "default" : "outline"}
+          size="sm"
+          className={`h-8 text-xs gap-1.5 ${editMode ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}`}
+          onClick={() => setEditMode(!editMode)}
+        >
+          <Pencil className="h-3 w-3" />
+          {editMode ? "Editing..." : "Edit"}
+        </Button>
+
+        {loading && <RefreshCw className="h-3.5 w-3.5 animate-spin text-emerald-500" />}
+
+        {/* Stats */}
+        <div className="flex items-center gap-3 ml-auto text-[10px]">
+          <span className="flex items-center gap-1">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
+            Present: {monthStats.present}
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />
+            Absent: {monthStats.absent}
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2.5 h-2.5 rounded-full bg-gray-200 inline-block border border-gray-300" />
+            Unmarked: {monthStats.unmarked}
+          </span>
+        </div>
+      </div>
+
+      {/* Calendar Grid */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        {/* Day headers */}
+        <div className="grid grid-cols-7 bg-gray-100">
+          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+            <div key={d} className="text-center text-[10px] font-bold text-gray-500 uppercase tracking-wider py-1.5 border-b border-gray-200">
+              {d}
+            </div>
+          ))}
+        </div>
+
+        {/* Day cells */}
+        <div className="grid grid-cols-7">
+          {calendarDays.map((dayInfo, idx) => {
+            const isToday = dayInfo.dateStr === todayStr && dayInfo.isCurrentMonth;
+            const isPresent = dayInfo.status === "present";
+            const isAbsent = dayInfo.status === "absent";
+            const isUnmarked = !dayInfo.status && dayInfo.isCurrentMonth;
+
+            let cellBg = "";
+            if (!dayInfo.isCurrentMonth) cellBg = "bg-gray-50 text-gray-300";
+            else if (isPresent) cellBg = "bg-emerald-100 text-emerald-800";
+            else if (isAbsent) cellBg = "bg-red-100 text-red-800";
+            else cellBg = "bg-white text-gray-600";
+
+            return (
+              <button
+                key={idx}
+                disabled={!editMode || !dayInfo.isCurrentMonth}
+                onClick={() => handleDayClick(dayInfo)}
+                className={`
+                  relative min-h-[52px] p-1.5 border-b border-r border-gray-100 text-left transition-all
+                  ${cellBg}
+                  ${editMode && dayInfo.isCurrentMonth ? "cursor-pointer hover:ring-2 hover:ring-emerald-400 hover:z-10" : ""}
+                  ${!dayInfo.isCurrentMonth ? "cursor-default" : ""}
+                `}
+                title={
+                  dayInfo.isCurrentMonth
+                    ? `${dayInfo.dayName}, ${dayInfo.dateStr}${dayInfo.status ? ` — ${dayInfo.status}` : " — not marked"}${editMode ? " (click to toggle)" : ""}`
+                    : ""
+                }
+              >
+                <span className={`text-xs font-semibold block ${isToday ? "bg-emerald-600 text-white w-5 h-5 rounded-full flex items-center justify-center" : ""}`}>
+                  {dayInfo.day}
+                </span>
+                {dayInfo.isCurrentMonth && isPresent && (
+                  <CheckCircle2 className="h-3 w-3 text-emerald-600 mt-0.5" />
+                )}
+                {dayInfo.isCurrentMonth && isAbsent && (
+                  <XCircle className="h-3 w-3 text-red-500 mt-0.5" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {editMode && (
+        <p className="text-[10px] text-gray-400 mt-2 italic">
+          Click on any date to toggle attendance: Unmarked → Present → Absent → Present
+        </p>
       )}
     </div>
   );
@@ -1491,6 +1796,8 @@ function EmployeeDetailView() {
             </div>
           </div>
 
+          {/* Attendance Calendar */}
+          <AttendanceCalendar employeeId={employee.id} />
 
         </div>
 
