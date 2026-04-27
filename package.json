@@ -4,23 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
-<<<<<<< HEAD
     "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-=======
-    "build": "prisma generate && next build && mkdir -p .next/standalone/.next && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ && mkdir -p .next/standalone/prisma && cp prisma/schema.prisma .next/standalone/prisma/ && cp -r prisma/migrations .next/standalone/prisma/",
-    "start": "node .next/standalone/server.js",
-    "lint": "eslint .",
-    "postinstall": "prisma generate",
-    "db:push": "prisma db push",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:migrate:deploy": "prisma migrate deploy",
->>>>>>> f04e20575b112f284b1efdeb812b6cc0d0fbd454
     "db:reset": "prisma migrate reset"
   },
   "dependencies": {
@@ -67,13 +56,7 @@
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^12.23.2",
-<<<<<<< HEAD
     "input-otp": "^1.4.2",
-=======
-    "html2canvas": "^1.4.1",
-    "input-otp": "^1.4.2",
-    "jspdf": "^4.2.1",
->>>>>>> f04e20575b112f284b1efdeb812b6cc0d0fbd454
     "lucide-react": "^0.525.0",
     "next": "^16.1.1",
     "next-auth": "^4.24.11",
@@ -87,10 +70,6 @@
     "react-markdown": "^10.1.0",
     "react-resizable-panels": "^3.0.3",
     "react-syntax-highlighter": "^15.6.1",
-<<<<<<< HEAD
-=======
-    "react-to-print": "^3.3.0",
->>>>>>> f04e20575b112f284b1efdeb812b6cc0d0fbd454
     "recharts": "^2.15.4",
     "sharp": "^0.34.3",
     "sonner": "^2.0.6",
