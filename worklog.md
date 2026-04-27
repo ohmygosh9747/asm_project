@@ -134,3 +134,26 @@ Stage Summary:
 - Uploaded images display correctly in dashboard list and employee profile page
 - File serving API route created to serve uploaded images via `/upload/filename` URLs
 - Next.js rewrite config added for the `/upload/*` path
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Add position filter dropdown in dashboard alongside refresh button
+
+Work Log:
+- Added `positionFilter` state to DashboardView (default: "all")
+- Added `useMemo` import to page.tsx
+- Created `uniquePositions` memoized value: extracts distinct non-empty positions from employees and sorts them alphabetically
+- Created `filteredEmployees` memoized value: filters employees by selected position, or returns all when "all" is selected
+- Updated the "Refresh" row to "Refresh & Filter" row:
+  - Left side: "Filter by Position:" label + Select dropdown (200px wide) with "All Positions" + dynamically populated positions from the database
+  - Right side: Refresh button (unchanged)
+- Updated employee table to use `filteredEmployees` instead of `employees`
+- Updated empty state message to show "No employees match this position filter" when a filter is active
+- Build compiled successfully
+
+Stage Summary:
+- Position filter dropdown added to dashboard in same row as Refresh button
+- Positions are dynamically loaded from the database (distinct positions from existing employees)
+- Filtering works client-side via useMemo for instant response
+- Stats cards still use full employee list (not filtered) for accurate totals

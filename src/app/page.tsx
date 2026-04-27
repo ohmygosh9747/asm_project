@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { signIn, signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
@@ -772,6 +772,7 @@ function DashboardView() {
   const { searchQuery, user, setView, setSelectedEmployee } = useAppStore();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [positionFilter, setPositionFilter] = useState<string>("all");
 
   const fetchEmployees = useCallback(async () => {
     try {
@@ -793,6 +794,20 @@ function DashboardView() {
   useEffect(() => {
     fetchEmployees();
   }, [fetchEmployees]);
+
+  // Extract unique positions from employees for the filter dropdown
+  const uniquePositions = useMemo(() => {
+    const positions = employees
+      .map((e) => e.position)
+      .filter((p): p is string => !!p && p.trim() !== "");
+    return Array.from(new Set(positions)).sort();
+  }, [employees]);
+
+  // Filter employees by position
+  const filteredEmployees = useMemo(() => {
+    if (positionFilter === "all") return employees;
+    return employees.filter((e) => e.position === positionFilter);
+  }, [employees, positionFilter]);
 
   // Stats
   const todayStr = getDateStr(0);
@@ -857,8 +872,22 @@ function DashboardView() {
         ))}
       </div>
 
-      {/* Refresh */}
-      <div className="flex justify-end">
+      {/* Refresh & Filter */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Label className="text-xs font-semibold text-muted-foreground whitespace-nowrap">Filter by Position:</Label>
+          <Select value={positionFilter} onValueChange={setPositionFilter}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="All Positions" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Positions</SelectItem>
+              {uniquePositions.map((pos) => (
+                <SelectItem key={pos} value={pos}>{pos}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <Button variant="outline" size="sm" onClick={fetchEmployees}>
           <RefreshCw className="h-3 w-3 mr-1" />
           Refresh
@@ -872,7 +901,7 @@ function DashboardView() {
             <Skeleton key={i} className="h-16 w-full rounded-lg" />
           ))}
         </div>
-      ) : employees.length === 0 ? (
+      ) : filteredEmployees.length === 0 ? (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -883,6 +912,8 @@ function DashboardView() {
           <p className="text-sm text-muted-foreground/70 mt-1">
             {searchQuery
               ? "Try adjusting your search"
+              : positionFilter !== "all"
+              ? "No employees match this position filter"
               : "Click 'Add Employee' to get started"}
           </p>
         </motion.div>
@@ -901,7 +932,7 @@ function DashboardView() {
               </thead>
               <tbody>
                 <AnimatePresence>
-                  {employees.map((emp) => (
+                  {filteredEmployees.map((emp) => (
                     <EmployeeRow
                       key={emp.id}
                       employee={emp}
