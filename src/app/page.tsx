@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { signIn, signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAppStore, type ViewType } from "@/lib/store";
+import { useAppStore, type ViewType, type WarningItem, type FineItem } from "@/lib/store";
 import {
   LayoutDashboard,
   Users,
@@ -43,6 +43,11 @@ import {
   Eye,
   Trash2,
   MinusCircle,
+  DollarSign,
+  Banknote,
+  FileWarning,
+  FileX,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -441,9 +446,6 @@ function Sidebar() {
   const navItems = [
     { icon: LayoutDashboard, label: "Dashboard", view: "dashboard" as ViewType },
     { icon: Bell, label: "Notifications", view: "notifications" as ViewType },
-    ...(user?.role === "super_admin"
-      ? [{ icon: Shield, label: "Delete Requests", view: "delete-requests" as ViewType }]
-      : []),
     { icon: Settings, label: "Settings", view: "settings" as ViewType },
   ];
 
@@ -2531,15 +2533,163 @@ function EmployeeFormView() {
 }
 
 // ============================================================
-// DELETE REQUESTS VIEW
+// SEARCHABLE EMPLOYEE DROPDOWN
 // ============================================================
 
-function DeleteRequestsView() {
-  const [requests, setRequests] = useState<DeleteRequestItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState("pending");
-  const { user } = useAppStore();
+function SearchableEmployeeDropdown({
+  employees,
+  onSelect,
+  selectedId,
+}: {
+  employees: Employee[];
+  onSelect: (emp: Employee) => void;
+  selectedId: string | null;
+}) {
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const filtered = employees.filter(
+    (e) =>
+      e.fullName.toLowerCase().includes(search.toLowerCase()) ||
+      e.employeeId.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const selectedEmployee = employees.find((e) => e.id === selectedId);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={dropdownRef} className="relative">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search by name or employee ID..."
+          value={selectedEmployee ? `${selectedEmployee.fullName} (${selectedEmployee.employeeId})` : search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setOpen(true);
+            if (selectedId) onSelect(null as any);
+          }}
+          onFocus={() => setOpen(true)}
+          className="pl-10"
+        />
+        {selectedEmployee && (
+          <button
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setSearch("");
+              onSelect(null as any);
+            }}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 top-full mt-1 w-full bg-popover border border-border rounded-lg shadow-xl max-h-60 overflow-y-auto">
+          {filtered.map((emp) => (
+            <button
+              key={emp.id}
+              className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-colors text-left"
+              onClick={() => {
+                onSelect(emp);
+                setSearch("");
+                setOpen(false);
+              }}
+            >
+              <div className="h-8 w-8 rounded-full overflow-hidden bg-gradient-to-br from-emerald-400 to-teal-500 flex-shrink-0">
+                {emp.photoUrl ? (
+                  <img src={emp.photoUrl} alt={emp.fullName} className="h-full w-full object-cover" />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center text-white text-[10px] font-bold">
+                    {getInitials(emp.fullName)}
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{emp.fullName}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {emp.employeeId} {emp.position ? `• ${emp.position}` : ""}
+                </p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+      {open && filtered.length === 0 && search && (
+        <div className="absolute z-50 top-full mt-1 w-full bg-popover border border-border rounded-lg shadow-xl p-4 text-center">
+          <p className="text-sm text-muted-foreground">No employees found</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// UNIFIED NOTIFICATIONS VIEW (3 TABS)
+// ============================================================
+
+function NotificationsView() {
+  const {
+    user,
+    setView,
+    setSelectedEmployee,
+    setPendingDeleteRequest,
+    notificationsTab,
+    setNotificationsTab,
+    highlightWarningId,
+    highlightFineId,
+    setHighlightWarning,
+    setHighlightFine,
+  } = useAppStore();
+
+  // Tab: Requests
+  const [requests, setRequests] = useState<DeleteRequestItem[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState("pending");
+
+  // Tab: Warnings
+  const [warnings, setWarnings] = useState<WarningItem[]>([]);
+  const [warningsLoading, setWarningsLoading] = useState(true);
+  const [createWarningOpen, setCreateWarningOpen] = useState(false);
+  const [warningEmployeeId, setWarningEmployeeId] = useState<string | null>(null);
+  const [warningReason, setWarningReason] = useState("");
+  const [warningSaving, setWarningSaving] = useState(false);
+  const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
+
+  // Tab: Fines
+  const [fines, setFines] = useState<FineItem[]>([]);
+  const [finesLoading, setFinesLoading] = useState(true);
+  const [createFineOpen, setCreateFineOpen] = useState(false);
+  const [fineEmployeeId, setFineEmployeeId] = useState<string | null>(null);
+  const [fineReason, setFineReason] = useState("");
+  const [fineAmount, setFineAmount] = useState("");
+  const [fineSaving, setFineSaving] = useState(false);
+
+  // Refs for scrolling to highlighted items
+  const warningRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const fineRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Fetch all employees for dropdowns
+  useEffect(() => {
+    fetch("/api/employees?status=active")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setAllEmployees(data);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Fetch delete requests
   const fetchRequests = useCallback(async () => {
     try {
       const params = new URLSearchParams();
@@ -2552,15 +2702,86 @@ function DeleteRequestsView() {
     } catch {
       toast.error("Failed to load delete requests");
     } finally {
-      setLoading(false);
+      setRequestsLoading(false);
     }
   }, [statusFilter]);
+
+  // Fetch warnings
+  const fetchWarnings = useCallback(async () => {
+    try {
+      const res = await fetch("/api/warnings");
+      if (res.ok) {
+        const data = await res.json();
+        setWarnings(data);
+      }
+    } catch {
+      toast.error("Failed to load warnings");
+    } finally {
+      setWarningsLoading(false);
+    }
+  }, []);
+
+  // Fetch fines
+  const fetchFines = useCallback(async () => {
+    try {
+      const res = await fetch("/api/fines");
+      if (res.ok) {
+        const data = await res.json();
+        setFines(data);
+      }
+    } catch {
+      toast.error("Failed to load fines");
+    } finally {
+      setFinesLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchRequests();
   }, [fetchRequests]);
 
-  const handleAction = async (id: string, status: "approved" | "rejected") => {
+  useEffect(() => {
+    fetchWarnings();
+  }, [fetchWarnings]);
+
+  useEffect(() => {
+    fetchFines();
+  }, [fetchFines]);
+
+  // Scroll to highlighted items
+  useEffect(() => {
+    if (highlightWarningId && notificationsTab === "warnings") {
+      setTimeout(() => {
+        warningRefs.current[highlightWarningId]?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 300);
+    }
+  }, [highlightWarningId, notificationsTab]);
+
+  useEffect(() => {
+    if (highlightFineId && notificationsTab === "fines") {
+      setTimeout(() => {
+        fineRefs.current[highlightFineId]?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 300);
+    }
+  }, [highlightFineId, notificationsTab]);
+
+  // Clear highlights after a delay
+  useEffect(() => {
+    if (highlightWarningId) {
+      const timer = setTimeout(() => setHighlightWarning(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [highlightWarningId, setHighlightWarning]);
+
+  useEffect(() => {
+    if (highlightFineId) {
+      const timer = setTimeout(() => setHighlightFine(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [highlightFineId, setHighlightFine]);
+
+  // Delete request handlers
+  const handleDeleteRequestAction = async (id: string, status: "approved" | "rejected") => {
     try {
       const res = await fetch("/api/delete-requests", {
         method: "PUT",
@@ -2578,269 +2799,753 @@ function DeleteRequestsView() {
     }
   };
 
-  if (user?.role !== "super_admin") {
-    return (
-      <div className="text-center py-16">
-        <Shield className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
-        <h3 className="text-lg font-medium text-muted-foreground">Access Denied</h3>
-        <p className="text-sm text-muted-foreground/70 mt-1">Only super admins can review delete requests</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Delete Requests</h2>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="approved">Approved</SelectItem>
-            <SelectItem value="rejected">Rejected</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {loading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 w-full rounded-lg" />
-          ))}
-        </div>
-      ) : requests.length === 0 ? (
-        <div className="text-center py-16">
-          <Trash2 className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
-          <h3 className="text-lg font-medium text-muted-foreground">No delete requests</h3>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <AnimatePresence>
-            {requests.map((req) => (
-              <motion.div
-                key={req.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, x: -100 }}
-              >
-                <Card className="border-emerald-200/30 dark:border-emerald-800/30">
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h4 className="font-semibold text-sm">{req.employeeName}</h4>
-                          <Badge
-                            className={
-                              req.status === "pending"
-                                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                                : req.status === "approved"
-                                ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                                : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                            }
-                          >
-                            {req.status}
-                          </Badge>
-                        </div>
-                        {req.reason && (
-                          <p className="text-xs text-muted-foreground mt-1">Reason: {req.reason}</p>
-                        )}
-                        <p className="text-[10px] text-muted-foreground mt-1">{formatDateTime(req.createdAt)}</p>
-                      </div>
-                      {req.status === "pending" && (
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => handleAction(req.id, "approved")}
-                          >
-                            Approve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleAction(req.id, "rejected")}
-                          >
-                            Reject
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============================================================
-// NOTIFICATIONS VIEW
-// ============================================================
-
-function NotificationsView() {
-  const { user, setView, setSelectedEmployee, setPendingDeleteRequest } = useAppStore();
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const fetchNotifications = useCallback(async () => {
-    if (!user?.id) return;
+  // Warning handlers
+  const handleCreateWarning = async () => {
+    if (!warningEmployeeId || !warningReason.trim()) {
+      toast.error("Please select an employee and provide a reason");
+      return;
+    }
+    const emp = allEmployees.find((e) => e.id === warningEmployeeId);
+    if (!emp) {
+      toast.error("Employee not found");
+      return;
+    }
+    setWarningSaving(true);
     try {
-      const res = await fetch(`/api/notifications?userId=${user.id}`);
+      const res = await fetch("/api/warnings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeId: emp.id,
+          employeeName: emp.fullName,
+          reason: warningReason.trim(),
+          isAutoGenerated: false,
+          createdBy: user?.name || "admin",
+        }),
+      });
       if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) setNotifications(data);
+        toast.success("Warning created successfully");
+        setCreateWarningOpen(false);
+        setWarningEmployeeId(null);
+        setWarningReason("");
+        fetchWarnings();
+      } else {
+        toast.error("Failed to create warning");
       }
     } catch {
-      toast.error("Failed to load notifications");
+      toast.error("Failed to create warning");
     } finally {
-      setLoading(false);
+      setWarningSaving(false);
     }
-  }, [user?.id]);
+  };
 
-  useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
-
-  const markAsRead = async (id: string) => {
+  const handleMarkWarningRead = async (id: string) => {
     try {
-      await fetch("/api/notifications", {
+      const res = await fetch("/api/warnings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, read: true }),
       });
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-      );
+      if (res.ok) {
+        setWarnings((prev) => prev.map((w) => (w.id === id ? { ...w, read: true } : w)));
+        // Also remove from popup
+        const { popupWarnings, setPopupWarnings } = useAppStore.getState();
+        setPopupWarnings(popupWarnings.filter((w) => w.id !== id));
+        toast.success("Marked as read");
+      }
     } catch {
       toast.error("Failed to mark as read");
     }
   };
 
-  const markAllAsRead = async () => {
+  // Fine handlers
+  const handleCreateFine = async () => {
+    if (!fineEmployeeId || !fineReason.trim() || !fineAmount) {
+      toast.error("Please select an employee, provide a reason and amount");
+      return;
+    }
+    const emp = allEmployees.find((e) => e.id === fineEmployeeId);
+    if (!emp) {
+      toast.error("Employee not found");
+      return;
+    }
+    setFineSaving(true);
     try {
-      const unread = notifications.filter((n) => !n.read);
-      await Promise.all(
-        unread.map((n) =>
-          fetch("/api/notifications", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: n.id, read: true }),
-          })
-        )
-      );
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-      toast.success("All notifications marked as read");
-    } catch {
-      toast.error("Failed to mark all as read");
-    }
-  };
-
-  const handleNotificationClick = (notif: NotificationItem) => {
-    // Mark as read first
-    if (!notif.read) markAsRead(notif.id);
-
-    // Parse the link and navigate accordingly
-    if (notif.link) {
-      // Format: "employee-detail:EMPLOYEE_ID:delete:REQUEST_ID"
-      if (notif.link.startsWith("employee-detail:")) {
-        const parts = notif.link.split(":");
-        const employeeId = parts[1];
-        const action = parts[2]; // "delete" or other actions
-        const requestId = parts[3];
-
-        if (employeeId) {
-          setSelectedEmployee(employeeId);
-          if (action === "delete" && requestId && user?.role === "super_admin") {
-            setPendingDeleteRequest(requestId, employeeId);
-          }
-          setView("employee-detail");
-        }
-      } else if (notif.link === "delete-requests") {
-        setView("delete-requests");
+      const res = await fetch("/api/fines", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeId: emp.id,
+          employeeName: emp.fullName,
+          reason: fineReason.trim(),
+          amount: parseFloat(fineAmount),
+          createdBy: user?.name || "admin",
+        }),
+      });
+      if (res.ok) {
+        toast.success("Fine created successfully");
+        setCreateFineOpen(false);
+        setFineEmployeeId(null);
+        setFineReason("");
+        setFineAmount("");
+        fetchFines();
+      } else {
+        toast.error("Failed to create fine");
       }
+    } catch {
+      toast.error("Failed to create fine");
+    } finally {
+      setFineSaving(false);
     }
   };
 
-  const typeIcon = (type: string) => {
-    switch (type) {
-      case "success": return <CheckCircle2 className="h-5 w-5 text-emerald-500" />;
-      case "warning": return <AlertTriangle className="h-5 w-5 text-amber-500" />;
-      case "danger": return <XCircle className="h-5 w-5 text-red-500" />;
-      default: return <Bell className="h-5 w-5 text-blue-500" />;
+  const handleMarkFineRead = async (id: string) => {
+    try {
+      const res = await fetch("/api/fines", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, read: true }),
+      });
+      if (res.ok) {
+        setFines((prev) => prev.map((f) => (f.id === id ? { ...f, read: true } : f)));
+        // Also remove from popup
+        const { popupFines, setPopupFines } = useAppStore.getState();
+        setPopupFines(popupFines.filter((f) => f.id !== id));
+        toast.success("Marked as read");
+      }
+    } catch {
+      toast.error("Failed to mark as read");
     }
   };
+
+  // Count unread for badge
+  const unreadWarnings = warnings.filter((w) => !w.read).length;
+  const unreadFines = fines.filter((f) => !f.read).length;
+  const pendingRequests = requests.filter((r) => r.status === "pending").length;
+
+  const tabs = [
+    {
+      key: "requests" as const,
+      label: "Requests",
+      icon: Shield,
+      count: pendingRequests,
+      countClass: "bg-amber-500",
+    },
+    {
+      key: "warnings" as const,
+      label: "Warnings",
+      icon: AlertTriangle,
+      count: unreadWarnings,
+      countClass: "bg-amber-600",
+    },
+    {
+      key: "fines" as const,
+      label: "Fines",
+      icon: DollarSign,
+      count: unreadFines,
+      countClass: "bg-red-500",
+    },
+  ];
+
+  const selectedWarningEmployee = allEmployees.find((e) => e.id === warningEmployeeId);
+  const selectedFineEmployee = allEmployees.find((e) => e.id === fineEmployeeId);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Header */}
+      <div>
         <h2 className="text-2xl font-bold">Notifications</h2>
-        {notifications.some((n) => !n.read) && (
-          <Button variant="outline" size="sm" onClick={markAllAsRead}>
-            <CheckCircle2 className="h-3 w-3 mr-1" />
-            Mark all as read
-          </Button>
-        )}
+        <p className="text-sm text-muted-foreground">Manage requests, warnings, and fines</p>
       </div>
 
-      {loading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full rounded-lg" />
-          ))}
-        </div>
-      ) : notifications.length === 0 ? (
-        <div className="text-center py-16">
-          <Bell className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
-          <h3 className="text-lg font-medium text-muted-foreground">No notifications</h3>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <AnimatePresence>
-            {notifications.map((notif) => (
-              <motion.div
-                key={notif.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
+      {/* Tab Buttons */}
+      <div className="flex gap-2 border-b border-emerald-200/30 dark:border-emerald-800/30 pb-0">
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setNotificationsTab(tab.key)}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-all border-b-2 -mb-[1px] ${
+              notificationsTab === tab.key
+                ? "border-emerald-600 text-emerald-700 dark:text-emerald-400"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-emerald-300 dark:hover:border-emerald-700"
+            }`}
+          >
+            <tab.icon className="h-4 w-4" />
+            {tab.label}
+            {tab.count > 0 && (
+              <span className={`h-5 min-w-[20px] px-1.5 rounded-full ${tab.countClass} text-white text-[10px] font-bold flex items-center justify-center`}>
+                {tab.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      <AnimatePresence mode="wait">
+        {/* ====== REQUESTS TAB ====== */}
+        {notificationsTab === "requests" && (
+          <motion.div
+            key="requests"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Delete Requests</h3>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="approved">Approved</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {requestsLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-24 w-full rounded-lg" />
+                ))}
+              </div>
+            ) : requests.length === 0 ? (
+              <div className="text-center py-16">
+                <Trash2 className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
+                <h3 className="text-lg font-medium text-muted-foreground">No delete requests</h3>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <AnimatePresence>
+                  {requests.map((req) => (
+                    <motion.div
+                      key={req.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, x: -100 }}
+                    >
+                      <Card className="border-emerald-200/30 dark:border-emerald-800/30">
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h4 className="font-semibold text-sm">{req.employeeName}</h4>
+                                <Badge
+                                  className={
+                                    req.status === "pending"
+                                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                                      : req.status === "approved"
+                                      ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                      : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                  }
+                                >
+                                  {req.status}
+                                </Badge>
+                              </div>
+                              {req.reason && (
+                                <p className="text-xs text-muted-foreground mt-1">Reason: {req.reason}</p>
+                              )}
+                              <p className="text-[10px] text-muted-foreground mt-1">{formatDateTime(req.createdAt)}</p>
+                            </div>
+                            {req.status === "pending" && user?.role === "super_admin" && (
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => handleDeleteRequestAction(req.id, "approved")}
+                                >
+                                  Approve
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleDeleteRequestAction(req.id, "rejected")}
+                                >
+                                  Reject
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ====== WARNINGS TAB ====== */}
+        {notificationsTab === "warnings" && (
+          <motion.div
+            key="warnings"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Warning Notices</h3>
+              <Button
+                onClick={() => setCreateWarningOpen(true)}
+                className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white shadow-md"
               >
-                <Card
-                  className={`cursor-pointer transition-colors border-emerald-200/30 dark:border-emerald-800/30 ${
-                    !notif.read
-                      ? "bg-emerald-50/50 dark:bg-emerald-950/20 border-l-4 border-l-emerald-500"
-                      : ""
-                  }`}
-                  onClick={() => handleNotificationClick(notif)}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5">{typeIcon(notif.type)}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h4 className={`text-sm ${!notif.read ? "font-semibold" : "font-medium"}`}>
-                            {notif.title}
-                          </h4>
-                          {!notif.read && (
-                            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                <AlertTriangle className="h-4 w-4 mr-2" />
+                Create Warning
+              </Button>
+            </div>
+
+            {/* Create Warning Dialog */}
+            <Dialog open={createWarningOpen} onOpenChange={setCreateWarningOpen}>
+              <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                    <AlertTriangle className="h-5 w-5" />
+                    Create Warning Notice
+                  </DialogTitle>
+                  <DialogDescription>
+                    Issue a formal warning notice to an employee.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-medium">Employee</Label>
+                    <SearchableEmployeeDropdown
+                      employees={allEmployees}
+                      onSelect={(emp) => setWarningEmployeeId(emp?.id || null)}
+                      selectedId={warningEmployeeId}
+                    />
+                  </div>
+                  {selectedWarningEmployee && (
+                    <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full overflow-hidden bg-gradient-to-br from-emerald-400 to-teal-500 flex-shrink-0">
+                          {selectedWarningEmployee.photoUrl ? (
+                            <img src={selectedWarningEmployee.photoUrl} alt={selectedWarningEmployee.fullName} className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="h-full w-full flex items-center justify-center text-white text-xs font-bold">
+                              {getInitials(selectedWarningEmployee.fullName)}
+                            </div>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1">{notif.message}</p>
-                        <p className="text-[10px] text-muted-foreground/70 mt-1">
-                          {formatDateTime(notif.createdAt)}
-                        </p>
+                        <div>
+                          <p className="text-sm font-semibold">{selectedWarningEmployee.fullName}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {selectedWarningEmployee.employeeId} {selectedWarningEmployee.position ? `• ${selectedWarningEmployee.position}` : ""}
+                          </p>
+                          {selectedWarningEmployee.companyName && (
+                            <p className="text-[10px] text-muted-foreground">{selectedWarningEmployee.companyName}</p>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
-      )}
+                  )}
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-medium">Reason</Label>
+                    <Textarea
+                      placeholder="Enter reason for the warning..."
+                      value={warningReason}
+                      onChange={(e) => setWarningReason(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+                </div>
+                <DialogFooter className="gap-2 sm:gap-0">
+                  <Button variant="outline" onClick={() => setCreateWarningOpen(false)}>Cancel</Button>
+                  <Button
+                    onClick={handleCreateWarning}
+                    disabled={warningSaving}
+                    className="bg-amber-600 hover:bg-amber-700 text-white"
+                  >
+                    {warningSaving ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <AlertTriangle className="h-4 w-4 mr-1" />}
+                    {warningSaving ? "Creating..." : "Issue Warning"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            {/* Warnings List */}
+            {warningsLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-48 w-full rounded-lg" />
+                ))}
+              </div>
+            ) : warnings.length === 0 ? (
+              <div className="text-center py-16">
+                <AlertTriangle className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
+                <h3 className="text-lg font-medium text-muted-foreground">No warnings</h3>
+                <p className="text-sm text-muted-foreground/70 mt-1">Warning notices will appear here</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <AnimatePresence>
+                  {warnings.map((warning) => {
+                    const isHighlighted = highlightWarningId === warning.id;
+                    return (
+                      <motion.div
+                        key={warning.id}
+                        ref={(el) => { warningRefs.current[warning.id] = el; }}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, x: -100 }}
+                      >
+                        <Card className={`border-2 overflow-hidden transition-all duration-500 ${
+                          isHighlighted
+                            ? "border-amber-500 shadow-lg shadow-amber-500/20"
+                            : !warning.read
+                            ? "border-amber-300 dark:border-amber-800 shadow-md"
+                            : "border-amber-200/30 dark:border-amber-900/30"
+                        }`}>
+                          {/* Warning Header */}
+                          <div className="bg-gradient-to-r from-amber-600 to-orange-600 text-white px-6 py-3 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <FileWarning className="h-5 w-5" />
+                              <span className="font-bold text-lg tracking-wider">WARNING NOTICE</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {warning.isAutoGenerated && (
+                                <Badge className="bg-white/20 text-white text-[10px] border-0">Auto-generated</Badge>
+                              )}
+                              {!warning.read && (
+                                <Badge className="bg-white text-amber-700 text-[10px]">NEW</Badge>
+                              )}
+                            </div>
+                          </div>
+                          <CardContent className="p-6">
+                            <div className="flex gap-4">
+                              {/* Employee Photo */}
+                              <div className="flex-shrink-0">
+                                <div className="h-16 w-16 rounded-xl overflow-hidden bg-gradient-to-br from-emerald-400 to-teal-500 border-2 border-amber-200 dark:border-amber-800">
+                                  {warning.employee?.photoUrl ? (
+                                    <img src={warning.employee.photoUrl} alt={warning.employeeName} className="h-full w-full object-cover" />
+                                  ) : (
+                                    <div className="h-full w-full flex items-center justify-center text-white text-lg font-bold">
+                                      {getInitials(warning.employeeName)}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              {/* Employee Details */}
+                              <div className="flex-1 min-w-0 space-y-2">
+                                <div className="grid grid-cols-2 gap-x-8 gap-y-1.5">
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Employee Name</p>
+                                    <p className="text-sm font-semibold">{warning.employeeName}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Employee ID</p>
+                                    <p className="text-sm font-semibold">{warning.employee?.employeeId || warning.employeeId}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Position</p>
+                                    <p className="text-sm">{warning.employee?.position || "—"}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Company</p>
+                                    <p className="text-sm">{warning.employee?.companyName || "—"}</p>
+                                  </div>
+                                </div>
+                                <Separator className="my-2" />
+                                <div>
+                                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Reason</p>
+                                  <p className="text-sm font-medium text-amber-800 dark:text-amber-300">{warning.reason}</p>
+                                </div>
+                                {warning.isAutoGenerated && warning.absentDates && (
+                                  <div className="mt-1">
+                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Absent Dates</p>
+                                    <div className="flex flex-wrap gap-1.5 mt-1">
+                                      {(() => {
+                                        try {
+                                          const dates: string[] = JSON.parse(warning.absentDates);
+                                          return dates.map((d) => (
+                                            <Badge key={d} variant="outline" className="text-[10px] text-red-600 border-red-300 dark:border-red-800">
+                                              {d}
+                                            </Badge>
+                                          ));
+                                        } catch {
+                                          return <span className="text-xs text-muted-foreground">{warning.absentDates}</span>;
+                                        }
+                                      })()}
+                                    </div>
+                                  </div>
+                                )}
+                                <div className="flex items-center justify-between mt-3">
+                                  <p className="text-[10px] text-muted-foreground">
+                                    Date of Issue: {formatDateTime(warning.createdAt)}
+                                  </p>
+                                  <div className="flex items-center gap-2">
+                                    {!warning.read && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="text-amber-700 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-800 dark:hover:bg-amber-950/20"
+                                        onClick={() => handleMarkWarningRead(warning.id)}
+                                      >
+                                        <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                                        Mark as Read
+                                      </Button>
+                                    )}
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => window.print()}
+                                    >
+                                      <Printer className="h-3.5 w-3.5 mr-1" />
+                                      Print
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ====== FINES TAB ====== */}
+        {notificationsTab === "fines" && (
+          <motion.div
+            key="fines"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Fine Notices</h3>
+              <Button
+                onClick={() => setCreateFineOpen(true)}
+                className="bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white shadow-md"
+              >
+                <DollarSign className="h-4 w-4 mr-2" />
+                Create Fine
+              </Button>
+            </div>
+
+            {/* Create Fine Dialog */}
+            <Dialog open={createFineOpen} onOpenChange={setCreateFineOpen}>
+              <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2 text-red-700 dark:text-red-400">
+                    <Banknote className="h-5 w-5" />
+                    Create Fine Notice
+                  </DialogTitle>
+                  <DialogDescription>
+                    Issue a formal fine notice to an employee.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-medium">Employee</Label>
+                    <SearchableEmployeeDropdown
+                      employees={allEmployees}
+                      onSelect={(emp) => setFineEmployeeId(emp?.id || null)}
+                      selectedId={fineEmployeeId}
+                    />
+                  </div>
+                  {selectedFineEmployee && (
+                    <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full overflow-hidden bg-gradient-to-br from-emerald-400 to-teal-500 flex-shrink-0">
+                          {selectedFineEmployee.photoUrl ? (
+                            <img src={selectedFineEmployee.photoUrl} alt={selectedFineEmployee.fullName} className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="h-full w-full flex items-center justify-center text-white text-xs font-bold">
+                              {getInitials(selectedFineEmployee.fullName)}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold">{selectedFineEmployee.fullName}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {selectedFineEmployee.employeeId} {selectedFineEmployee.position ? `• ${selectedFineEmployee.position}` : ""}
+                          </p>
+                          {selectedFineEmployee.companyName && (
+                            <p className="text-[10px] text-muted-foreground">{selectedFineEmployee.companyName}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-medium">Reason</Label>
+                    <Textarea
+                      placeholder="Enter reason for the fine..."
+                      value={fineReason}
+                      onChange={(e) => setFineReason(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-medium">Fine Amount</Label>
+                    <div className="relative">
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={fineAmount}
+                        onChange={(e) => setFineAmount(e.target.value)}
+                        className="pr-14"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground">SAR</span>
+                    </div>
+                  </div>
+                </div>
+                <DialogFooter className="gap-2 sm:gap-0">
+                  <Button variant="outline" onClick={() => setCreateFineOpen(false)}>Cancel</Button>
+                  <Button
+                    onClick={handleCreateFine}
+                    disabled={fineSaving}
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    {fineSaving ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <DollarSign className="h-4 w-4 mr-1" />}
+                    {fineSaving ? "Creating..." : "Issue Fine"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            {/* Fines List */}
+            {finesLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-48 w-full rounded-lg" />
+                ))}
+              </div>
+            ) : fines.length === 0 ? (
+              <div className="text-center py-16">
+                <DollarSign className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
+                <h3 className="text-lg font-medium text-muted-foreground">No fines</h3>
+                <p className="text-sm text-muted-foreground/70 mt-1">Fine notices will appear here</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <AnimatePresence>
+                  {fines.map((fine) => {
+                    const isHighlighted = highlightFineId === fine.id;
+                    return (
+                      <motion.div
+                        key={fine.id}
+                        ref={(el) => { fineRefs.current[fine.id] = el; }}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, x: -100 }}
+                      >
+                        <Card className={`border-2 overflow-hidden transition-all duration-500 ${
+                          isHighlighted
+                            ? "border-red-500 shadow-lg shadow-red-500/20"
+                            : !fine.read
+                            ? "border-red-300 dark:border-red-800 shadow-md"
+                            : "border-red-200/30 dark:border-red-900/30"
+                        }`}>
+                          {/* Fine Header */}
+                          <div className="bg-gradient-to-r from-red-600 to-rose-600 text-white px-6 py-3 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <FileX className="h-5 w-5" />
+                              <span className="font-bold text-lg tracking-wider">FINE NOTICE</span>
+                            </div>
+                            {!fine.read && (
+                              <Badge className="bg-white text-red-700 text-[10px]">NEW</Badge>
+                            )}
+                          </div>
+                          <CardContent className="p-6">
+                            <div className="flex gap-4">
+                              {/* Employee Photo */}
+                              <div className="flex-shrink-0">
+                                <div className="h-16 w-16 rounded-xl overflow-hidden bg-gradient-to-br from-emerald-400 to-teal-500 border-2 border-red-200 dark:border-red-800">
+                                  {fine.employee?.photoUrl ? (
+                                    <img src={fine.employee.photoUrl} alt={fine.employeeName} className="h-full w-full object-cover" />
+                                  ) : (
+                                    <div className="h-full w-full flex items-center justify-center text-white text-lg font-bold">
+                                      {getInitials(fine.employeeName)}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              {/* Employee Details */}
+                              <div className="flex-1 min-w-0 space-y-2">
+                                <div className="grid grid-cols-2 gap-x-8 gap-y-1.5">
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Employee Name</p>
+                                    <p className="text-sm font-semibold">{fine.employeeName}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Employee ID</p>
+                                    <p className="text-sm font-semibold">{fine.employee?.employeeId || fine.employeeId}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Position</p>
+                                    <p className="text-sm">{fine.employee?.position || "—"}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Company</p>
+                                    <p className="text-sm">{fine.employee?.companyName || "—"}</p>
+                                  </div>
+                                </div>
+                                <Separator className="my-2" />
+                                <div>
+                                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Reason</p>
+                                  <p className="text-sm font-medium text-red-800 dark:text-red-300">{fine.reason}</p>
+                                </div>
+                                {/* Fine Amount - prominently displayed */}
+                                <div className="mt-2 p-3 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-center">
+                                  <p className="text-[10px] uppercase tracking-wider text-red-500 font-semibold">Fine Amount</p>
+                                  <p className="text-2xl font-bold text-red-700 dark:text-red-400">
+                                    {fine.amount.toLocaleString("en-SA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{" "}
+                                    <span className="text-sm font-semibold">SAR</span>
+                                  </p>
+                                </div>
+                                <div className="flex items-center justify-between mt-3">
+                                  <p className="text-[10px] text-muted-foreground">
+                                    Date of Issue: {formatDateTime(fine.createdAt)}
+                                  </p>
+                                  <div className="flex items-center gap-2">
+                                    {!fine.read && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="text-red-700 border-red-300 hover:bg-red-50 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-950/20"
+                                        onClick={() => handleMarkFineRead(fine.id)}
+                                      >
+                                        <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                                        Mark as Read
+                                      </Button>
+                                    )}
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => window.print()}
+                                    >
+                                      <Printer className="h-3.5 w-3.5 mr-1" />
+                                      Print
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -2945,6 +3650,167 @@ function SettingsView() {
 }
 
 // ============================================================
+// POPUP NOTIFICATION SYSTEM (Super Admin Only)
+// ============================================================
+
+function NotificationPopups() {
+  const {
+    user,
+    popupWarnings,
+    popupFines,
+    setPopupWarnings,
+    setPopupFines,
+    setView,
+    setNotificationsTab,
+    setHighlightWarning,
+    setHighlightFine,
+  } = useAppStore();
+
+  const isSuperAdmin = user?.role === "super_admin";
+
+  // Poll for unread warnings and fines every 15 seconds
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+
+    const fetchUnread = async () => {
+      try {
+        const [warnRes, fineRes] = await Promise.all([
+          fetch("/api/warnings?read=false"),
+          fetch("/api/fines?read=false"),
+        ]);
+
+        if (warnRes.ok) {
+          const warnData = await warnRes.json();
+          if (Array.isArray(warnData)) {
+            setPopupWarnings(warnData);
+          }
+        }
+
+        if (fineRes.ok) {
+          const fineData = await fineRes.json();
+          if (Array.isArray(fineData)) {
+            setPopupFines(fineData);
+          }
+        }
+      } catch {
+        // Silently fail
+      }
+    };
+
+    // Initial fetch
+    fetchUnread();
+
+    // Poll every 15 seconds
+    const interval = setInterval(fetchUnread, 15000);
+    return () => clearInterval(interval);
+  }, [isSuperAdmin, setPopupWarnings, setPopupFines]);
+
+  if (!isSuperAdmin) return null;
+
+  const allPopups = [
+    ...popupWarnings.map((w) => ({ ...w, type: "warning" as const })),
+    ...popupFines.map((f) => ({ ...f, type: "fine" as const })),
+  ];
+
+  if (allPopups.length === 0) return null;
+
+  return (
+    <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+      <AnimatePresence>
+        {allPopups.map((item) => (
+          <motion.div
+            key={`${item.type}-${item.id}`}
+            initial={{ opacity: 0, x: 100, scale: 0.9 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: 100, scale: 0.9 }}
+            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+            className="pointer-events-auto"
+          >
+            <div className={`rounded-xl shadow-2xl border-2 overflow-hidden ${
+              item.type === "warning"
+                ? "bg-amber-50 dark:bg-amber-950/90 border-amber-400 dark:border-amber-700"
+                : "bg-red-50 dark:bg-red-950/90 border-red-400 dark:border-red-700"
+            }`}>
+              {/* Popup Header */}
+              <div className={`px-4 py-2.5 flex items-center gap-2 ${
+                item.type === "warning"
+                  ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white"
+                  : "bg-gradient-to-r from-red-500 to-rose-500 text-white"
+              }`}>
+                {item.type === "warning" ? (
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                ) : (
+                  <DollarSign className="h-4 w-4 flex-shrink-0" />
+                )}
+                <span className="text-xs font-bold tracking-wider uppercase">
+                  {item.type === "warning" ? "New Warning" : "New Fine"}
+                </span>
+              </div>
+              {/* Popup Body */}
+              <div className="px-4 py-3">
+                <p className="text-sm font-semibold truncate">{item.employeeName}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{item.reason}</p>
+                {item.type === "fine" && (
+                  <p className="text-sm font-bold text-red-700 dark:text-red-400 mt-1">
+                    {(item as FineItem).amount.toLocaleString("en-SA", { minimumFractionDigits: 2 })} SAR
+                  </p>
+                )}
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    size="sm"
+                    className={`text-xs h-7 ${
+                      item.type === "warning"
+                        ? "bg-amber-600 hover:bg-amber-700 text-white"
+                        : "bg-red-600 hover:bg-red-700 text-white"
+                    }`}
+                    onClick={() => {
+                      setView("notifications");
+                      if (item.type === "warning") {
+                        setNotificationsTab("warnings");
+                        setHighlightWarning(item.id);
+                      } else {
+                        setNotificationsTab("fines");
+                        setHighlightFine(item.id);
+                      }
+                    }}
+                  >
+                    View
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-xs h-7"
+                    onClick={async () => {
+                      const endpoint = item.type === "warning" ? "/api/warnings" : "/api/fines";
+                      try {
+                        await fetch(endpoint, {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ id: item.id, read: true }),
+                        });
+                        if (item.type === "warning") {
+                          setPopupWarnings(popupWarnings.filter((w) => w.id !== item.id));
+                        } else {
+                          setPopupFines(popupFines.filter((f) => f.id !== item.id));
+                        }
+                      } catch {
+                        // Silently fail
+                      }
+                    }}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ============================================================
 // MAIN APP
 // ============================================================
 
@@ -2959,8 +3825,6 @@ function AppLayout() {
         return <EmployeeDetailView />;
       case "employee-form":
         return <EmployeeFormView />;
-      case "delete-requests":
-        return <DeleteRequestsView />;
       case "notifications":
         return <NotificationsView />;
       case "settings":
@@ -2989,6 +3853,8 @@ function AppLayout() {
           </AnimatePresence>
         </main>
       </div>
+      {/* Popup Notification System - visible only for super_admin */}
+      <NotificationPopups />
     </div>
   );
 }
