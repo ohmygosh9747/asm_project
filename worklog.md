@@ -157,3 +157,30 @@ Stage Summary:
 - Positions are dynamically loaded from the database (distinct positions from existing employees)
 - Filtering works client-side via useMemo for instant response
 - Stats cards still use full employee list (not filtered) for accurate totals
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: Add pagination to dashboard employee list (15 rows per page) with filter/search support
+
+Work Log:
+- Added `currentPage` state and `PAGE_SIZE = 15` constant to DashboardView
+- Added `useEffect` to reset to page 1 when `positionFilter` or `searchQuery` changes
+- Added `paginatedEmployees` memoized value that slices `filteredEmployees` for the current page
+- Added `totalPages`, `safeCurrentPage`, `goToPage()`, and `pageNumbers` for pagination logic
+- `pageNumbers` shows max 5 visible page numbers with smart windowing around current page
+- Table body now renders `paginatedEmployees` instead of `filteredEmployees`
+- Added pagination controls below the table (only shown when totalPages > 1):
+  - Left: "Showing X to Y of Z employees" info text
+  - Right: First, Previous, page number buttons, Next, Last navigation buttons
+  - Current page button highlighted with emerald color
+  - Disabled states for first/previous on page 1 and next/last on last page
+- Stats cards still show totals from full unfiltered employee list
+- Build compiled successfully
+
+Stage Summary:
+- Employee list is now paginated with 15 rows max per page
+- Filtering by position and searching both work with pagination
+- Page resets to 1 when filter or search changes
+- Full pagination controls: first/prev/page numbers/next/last
+- Shows "Showing X to Y of Z employees" info

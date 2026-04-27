@@ -773,6 +773,8 @@ function DashboardView() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [positionFilter, setPositionFilter] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 15;
 
   const fetchEmployees = useCallback(async () => {
     try {
@@ -795,6 +797,11 @@ function DashboardView() {
     fetchEmployees();
   }, [fetchEmployees]);
 
+  // Reset page when filter or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [positionFilter, searchQuery]);
+
   // Extract unique positions from employees for the filter dropdown
   const uniquePositions = useMemo(() => {
     const positions = employees
@@ -808,6 +815,29 @@ function DashboardView() {
     if (positionFilter === "all") return employees;
     return employees.filter((e) => e.position === positionFilter);
   }, [employees, positionFilter]);
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(filteredEmployees.length / PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedEmployees = useMemo(() => {
+    const start = (safeCurrentPage - 1) * PAGE_SIZE;
+    return filteredEmployees.slice(start, start + PAGE_SIZE);
+  }, [filteredEmployees, safeCurrentPage]);
+
+  const goToPage = (page: number) => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+  };
+
+  // Generate page numbers to display
+  const pageNumbers = useMemo(() => {
+    const pages: number[] = [];
+    const maxVisible = 5;
+    let start = Math.max(1, safeCurrentPage - Math.floor(maxVisible / 2));
+    const end = Math.min(totalPages, start + maxVisible - 1);
+    start = Math.max(1, end - maxVisible + 1);
+    for (let i = start; i <= end; i++) pages.push(i);
+    return pages;
+  }, [safeCurrentPage, totalPages]);
 
   // Stats
   const todayStr = getDateStr(0);
@@ -918,32 +948,117 @@ function DashboardView() {
           </p>
         </motion.div>
       ) : (
-        <Card className="border-emerald-200/30 dark:border-emerald-800/30 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-emerald-200/50 dark:border-emerald-800/50 bg-emerald-50/50 dark:bg-emerald-950/20">
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Photo</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Name & Rating</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Attendance (3 days)</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Position</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                <AnimatePresence>
-                  {filteredEmployees.map((emp) => (
-                    <EmployeeRow
-                      key={emp.id}
-                      employee={emp}
-                      onAttendanceChange={fetchEmployees}
-                    />
-                  ))}
-                </AnimatePresence>
-              </tbody>
-            </table>
-          </div>
-        </Card>
+        <>
+          <Card className="border-emerald-200/30 dark:border-emerald-800/30 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-emerald-200/50 dark:border-emerald-800/50 bg-emerald-50/50 dark:bg-emerald-950/20">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Photo</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Name & Rating</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Attendance (3 days)</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Position</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <AnimatePresence>
+                    {paginatedEmployees.map((emp) => (
+                      <EmployeeRow
+                        key={emp.id}
+                        employee={emp}
+                        onAttendanceChange={fetchEmployees}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-sm text-muted-foreground">
+                Showing{" "}
+                <span className="font-medium">
+                  {(safeCurrentPage - 1) * PAGE_SIZE + 1}
+                </span>{" "}
+                to{" "}
+                <span className="font-medium">
+                  {Math.min(safeCurrentPage * PAGE_SIZE, filteredEmployees.length)}
+                </span>{" "}
+                of{" "}
+                <span className="font-medium">{filteredEmployees.length}</span>{" "}
+                employees
+              </p>
+              <div className="flex items-center gap-1">
+                {/* First page */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={safeCurrentPage === 1}
+                  onClick={() => goToPage(1)}
+                  title="First page"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <ChevronLeft className="h-3.5 w-3.5 -ml-3" />
+                </Button>
+                {/* Previous */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={safeCurrentPage === 1}
+                  onClick={() => goToPage(safeCurrentPage - 1)}
+                  title="Previous page"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                {/* Page numbers */}
+                {pageNumbers.map((page) => (
+                  <Button
+                    key={page}
+                    variant={page === safeCurrentPage ? "default" : "outline"}
+                    size="icon"
+                    className={`h-8 w-8 ${
+                      page === safeCurrentPage
+                        ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                        : ""
+                    }`}
+                    onClick={() => goToPage(page)}
+                  >
+                    {page}
+                  </Button>
+                ))}
+                {/* Next */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={safeCurrentPage === totalPages}
+                  onClick={() => goToPage(safeCurrentPage + 1)}
+                  title="Next page"
+                >
+                  <ChevronLeft className="h-4 w-4 rotate-180" />
+                </Button>
+                {/* Last page */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={safeCurrentPage === totalPages}
+                  onClick={() => goToPage(totalPages)}
+                  title="Last page"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5 rotate-180" />
+                  <ChevronLeft className="h-3.5 w-3.5 rotate-180 -ml-3" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
