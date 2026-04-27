@@ -146,24 +146,58 @@
   background: oklch(0.55 0.16 160);
 }
 
-/* Print styles */
+/* Print styles — always white, even in dark mode */
 @media print {
   .no-print {
     display: none !important;
   }
-  body {
+  html, body {
     background: white !important;
-    color: black !important;
-  }
-  /* Force CV card to always be white when printed */
-  .print\:bg-white,
-  [class*="dark:"] {
-    background-color: white !important;
     color: #1a1a1a !important;
-    border-color: #e5e7eb !important;
   }
+  /* Remove dark class to force light mode when printing */
   .dark {
     background: white !important;
+    color: #1a1a1a !important;
+  }
+  /* Force all dark-mode elements to light when printing */
+  [class*="dark:bg-"] {
+    background-color: white !important;
+  }
+  [class*="dark:text-"] {
+    color: #1a1a1a !important;
+  }
+  [class*="dark:border-"] {
+    border-color: #e5e7eb !important;
+  }
+  /* Specific overrides for CV card */
+  .dark\:bg-slate-800,
+  .dark\:bg-slate-700\/50 {
+    background-color: white !important;
+  }
+  .dark\:text-gray-100,
+  .dark\:text-gray-200,
+  .dark\:text-gray-300 {
+    color: #1a1a1a !important;
+  }
+  .dark\:border-slate-600,
+  .dark\:border-slate-700 {
+    border-color: #e5e7eb !important;
+  }
+  .dark\:from-slate-700,
+  .dark\:to-slate-700 {
+    background: #f9fafb !important;
+  }
+  /* Print-specific utility classes */
+  .print\:bg-white {
+    background-color: white !important;
+  }
+  .print\:text-gray-900 {
+    color: #1a1a1a !important;
+  }
+  .print\:border-gray-200,
+  .print\:border-gray-100 {
+    border-color: #e5e7eb !important;
   }
 }
 

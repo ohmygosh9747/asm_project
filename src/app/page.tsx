@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { signIn, signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
@@ -661,7 +662,8 @@ function EmployeeRow({
 }) {
   const { setView, setSelectedEmployee, user } = useAppStore();
   const [openDay, setOpenDay] = useState<number | null>(null);
-  const rowRef = useRef<HTMLTableRowElement>(null);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
+  const triggerRefs = useRef<Record<number, HTMLButtonElement | null>>({});
 
   const getAttendanceForDay = (daysAgo: number): Attendance | undefined => {
     const dateStr = getDateStr(daysAgo);
@@ -671,7 +673,7 @@ function EmployeeRow({
   const markAttendance = async (daysAgo: number, status: string) => {
     const dateStr = getDateStr(daysAgo);
     try {
-      await fetch("/api/attendance", {
+      const res = await fetch("/api/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -682,7 +684,13 @@ function EmployeeRow({
           markedBy: user?.name || "System",
         }),
       });
+      if (res.ok) {
+        toast.success(`Marked ${status === "no_site" ? "No Site" : status.charAt(0).toUpperCase() + status.slice(1)}`);
+      } else {
+        toast.error("Failed to update attendance");
+      }
       setOpenDay(null);
+      setDropdownPos(null);
       onAttendanceChange();
     } catch {
       toast.error("Failed to update attendance");
@@ -698,127 +706,171 @@ function EmployeeRow({
     return { bg: "bg-gray-300 dark:bg-gray-600", text: "text-white", icon: <MinusCircle className="h-4 w-4" />, label: "—" };
   };
 
+  const handleToggleDropdown = (daysAgo: number) => {
+    if (openDay === daysAgo) {
+      setOpenDay(null);
+      setDropdownPos(null);
+    } else {
+      const trigger = triggerRefs.current[daysAgo];
+      if (trigger) {
+        const rect = trigger.getBoundingClientRect();
+        setDropdownPos({
+          top: rect.bottom + 6,
+          left: rect.left + rect.width / 2,
+        });
+        setOpenDay(daysAgo);
+      }
+    }
+  };
+
   // Close dropdown when clicking outside
   useEffect(() => {
     if (openDay === null) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (rowRef.current && !rowRef.current.contains(e.target as Node)) {
-        setOpenDay(null);
-      }
+      const target = e.target as HTMLElement;
+      // Don't close if clicking inside the dropdown
+      if (target.closest('[data-attendance-dropdown]')) return;
+      // Don't close if clicking the trigger button
+      if (target.closest('[data-attendance-trigger]')) return;
+      setOpenDay(null);
+      setDropdownPos(null);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [openDay]);
 
+  // The fixed-position dropdown rendered via portal
+  const renderDropdown = () => {
+    if (openDay === null || !dropdownPos) return null;
+    const att = getAttendanceForDay(openDay);
+    const isToday = openDay === 0;
+    const effectiveStatus = att?.status || (isToday ? "absent" : null);
+    const dateStr = getDateStr(openDay);
+    const dayName = getDayNameFromDateStr(dateStr);
+
+    return createPortal(
+      <div
+        data-attendance-dropdown
+        className="fixed z-[9999]"
+        style={{
+          top: dropdownPos.top,
+          left: dropdownPos.left,
+          transform: "translateX(-50%)",
+        }}
+      >
+        <div className="bg-popover border border-border rounded-lg shadow-xl p-2.5 w-[150px]">
+          <p className="text-[10px] text-muted-foreground font-medium px-1.5 pb-2 border-b border-border mb-2">
+            {dayName}, {dateStr}
+          </p>
+          <div className="space-y-2">
+            {[
+              { status: "present", label: "Present", bg: "bg-emerald-500 hover:bg-emerald-600", icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
+              { status: "absent", label: "Absent", bg: "bg-red-500 hover:bg-red-600", icon: <XCircle className="h-3.5 w-3.5" /> },
+              { status: "no_site", label: "No Site", bg: "bg-gray-400 hover:bg-gray-500", icon: <MinusCircle className="h-3.5 w-3.5" /> },
+            ].map((opt) => (
+              <button
+                key={opt.status}
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium text-white ${opt.bg} transition-colors ${effectiveStatus === opt.status ? "ring-2 ring-offset-1 ring-white/70 dark:ring-offset-slate-800" : ""}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  markAttendance(openDay, opt.status);
+                }}
+              >
+                {opt.icon}
+                {opt.label}
+                {effectiveStatus === opt.status && <span className="ml-auto text-[9px] opacity-80">✓</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+  };
+
   return (
-    <motion.tr
-      ref={rowRef}
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="border-b border-emerald-100 dark:border-emerald-900/30 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-colors"
-    >
-      {/* Photo */}
-      <td className="px-4 py-3">
-        <div className="h-10 w-10 rounded-full overflow-hidden bg-gradient-to-br from-emerald-400 to-teal-500 flex-shrink-0">
-          {employee.photoUrl ? (
-            <img src={employee.photoUrl} alt={employee.fullName} className="h-full w-full object-cover" />
-          ) : (
-            <div className="h-full w-full flex items-center justify-center text-white text-xs font-bold">
-              {getInitials(employee.fullName)}
-            </div>
-          )}
-        </div>
-      </td>
-
-      {/* Name & Rating */}
-      <td className="px-4 py-3">
-        <p className="font-semibold text-sm truncate max-w-[180px]">{employee.fullName}</p>
-        <StarRating rating={employee.rating} size={14} />
-      </td>
-
-      {/* 3-day attendance */}
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-3">
-          {[0, 1, 2].map((daysAgo) => {
-            const att = getAttendanceForDay(daysAgo);
-            const isToday = daysAgo === 0;
-            const effectiveStatus = att?.status || (isToday ? "absent" : null);
-            const style = getStatusStyle(effectiveStatus, isToday);
-            const dateStr = getDateStr(daysAgo);
-            const dayName = getDayNameFromDateStr(dateStr);
-            const isOpen = openDay === daysAgo;
-
-            return (
-              <div key={daysAgo} className="relative">
-                <button
-                  className="flex flex-col items-center gap-1 group"
-                  title={`${getDayLabel(daysAgo)}: ${style.label} (click to mark)`}
-                  onClick={() => setOpenDay(isOpen ? null : daysAgo)}
-                >
-                  <span className="text-[10px] text-muted-foreground group-hover:text-foreground transition-colors">
-                    {getDayLabel(daysAgo)}
-                  </span>
-                  <span
-                    className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer hover:scale-110 ${style.bg} ${style.text}`}
-                  >
-                    {style.icon}
-                  </span>
-                </button>
-
-                {/* Dropdown options */}
-                {isOpen && (
-                  <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-1 bg-popover border border-border rounded-lg shadow-xl p-2 w-[140px]">
-                    <p className="text-[10px] text-muted-foreground font-medium px-1.5 pb-1.5 border-b border-border mb-1.5">
-                      {dayName}, {dateStr}
-                    </p>
-                    {[
-                      { status: "present", label: "Present", bg: "bg-emerald-500 hover:bg-emerald-600", icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
-                      { status: "absent", label: "Absent", bg: "bg-red-500 hover:bg-red-600", icon: <XCircle className="h-3.5 w-3.5" /> },
-                      { status: "no_site", label: "No Site", bg: "bg-gray-400 hover:bg-gray-500", icon: <MinusCircle className="h-3.5 w-3.5" /> },
-                    ].map((opt) => (
-                      <button
-                        key={opt.status}
-                        className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-xs font-medium text-white ${opt.bg} transition-colors my-1 first:mt-0 last:mb-0 ${effectiveStatus === opt.status ? "ring-2 ring-offset-1 ring-white/70 dark:ring-offset-slate-800" : ""}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          markAttendance(daysAgo, opt.status);
-                        }}
-                      >
-                        {opt.icon}
-                        {opt.label}
-                        {effectiveStatus === opt.status && <span className="ml-auto text-[9px] opacity-80">✓</span>}
-                      </button>
-                    ))}
-                  </div>
-                )}
+    <>
+      <motion.tr
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="border-b border-emerald-100 dark:border-emerald-900/30 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-colors"
+      >
+        {/* Photo */}
+        <td className="px-4 py-3">
+          <div className="h-10 w-10 rounded-full overflow-hidden bg-gradient-to-br from-emerald-400 to-teal-500 flex-shrink-0">
+            {employee.photoUrl ? (
+              <img src={employee.photoUrl} alt={employee.fullName} className="h-full w-full object-cover" />
+            ) : (
+              <div className="h-full w-full flex items-center justify-center text-white text-xs font-bold">
+                {getInitials(employee.fullName)}
               </div>
-            );
-          })}
-        </div>
-      </td>
+            )}
+          </div>
+        </td>
 
-      {/* Position */}
-      <td className="px-4 py-3">
-        <span className="text-sm text-muted-foreground truncate block max-w-[150px]">
-          {employee.position || "—"}
-        </span>
-      </td>
+        {/* Name & Rating */}
+        <td className="px-4 py-3">
+          <p className="font-semibold text-sm truncate max-w-[180px]">{employee.fullName}</p>
+          <StarRating rating={employee.rating} size={14} />
+        </td>
 
-      {/* Action */}
-      <td className="px-4 py-3 text-right">
-        <Button
-          size="sm"
-          className="bg-emerald-600 hover:bg-emerald-700 text-white"
-          onClick={() => {
-            setSelectedEmployee(employee.id);
-            setView("employee-detail");
-          }}
-        >
-          <Eye className="h-3.5 w-3.5 mr-1" />
-          View
-        </Button>
-      </td>
-    </motion.tr>
+        {/* 3-day attendance */}
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-3">
+            {[0, 1, 2].map((daysAgo) => {
+              const att = getAttendanceForDay(daysAgo);
+              const isToday = daysAgo === 0;
+              const effectiveStatus = att?.status || (isToday ? "absent" : null);
+              const style = getStatusStyle(effectiveStatus, isToday);
+
+              return (
+                <div key={daysAgo}>
+                  <button
+                    ref={(el) => { triggerRefs.current[daysAgo] = el; }}
+                    data-attendance-trigger
+                    className="flex flex-col items-center gap-1 group"
+                    title={`${getDayLabel(daysAgo)}: ${style.label} (click to mark)`}
+                    onClick={() => handleToggleDropdown(daysAgo)}
+                  >
+                    <span className="text-[10px] text-muted-foreground group-hover:text-foreground transition-colors">
+                      {getDayLabel(daysAgo)}
+                    </span>
+                    <span
+                      className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer hover:scale-110 ${style.bg} ${style.text}`}
+                    >
+                      {style.icon}
+                    </span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </td>
+
+        {/* Position */}
+        <td className="px-4 py-3">
+          <span className="text-sm text-muted-foreground truncate block max-w-[150px]">
+            {employee.position || "—"}
+          </span>
+        </td>
+
+        {/* Action */}
+        <td className="px-4 py-3 text-right">
+          <Button
+            size="sm"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            onClick={() => {
+              setSelectedEmployee(employee.id);
+              setView("employee-detail");
+            }}
+          >
+            <Eye className="h-3.5 w-3.5 mr-1" />
+            View
+          </Button>
+        </td>
+      </motion.tr>
+      {renderDropdown()}
+    </>
   );
 }
 
@@ -1520,11 +1572,15 @@ function EmployeeDetailView() {
     if (!printRef.current || !employee) return;
     try {
       toast.info("Generating PDF...");
-      // Temporarily force light mode on the CV card for PDF capture
       const card = printRef.current;
-      const hadDark = card.classList.contains("dark:bg-slate-800");
-      card.style.backgroundColor = "#ffffff";
-      card.style.color = "#1a1a1a";
+
+      // Temporarily remove dark mode from the HTML element for clean PDF
+      const htmlEl = document.documentElement;
+      const hadDarkClass = htmlEl.classList.contains("dark");
+      if (hadDarkClass) htmlEl.classList.remove("dark");
+
+      // Wait a tick for styles to re-render
+      await new Promise((r) => setTimeout(r, 100));
 
       const html2canvas = (await import("html2canvas")).default;
       const jsPDF = (await import("jspdf")).default;
@@ -1534,9 +1590,8 @@ function EmployeeDetailView() {
         backgroundColor: "#ffffff",
       });
 
-      // Restore original styles
-      card.style.backgroundColor = "";
-      card.style.color = "";
+      // Restore dark mode
+      if (hadDarkClass) htmlEl.classList.add("dark");
 
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF("p", "mm", "a4");
@@ -1546,6 +1601,12 @@ function EmployeeDetailView() {
       pdf.save(`${employee.fullName.replace(/\s+/g, "_")}_CV.pdf`);
       toast.success("PDF downloaded successfully");
     } catch {
+      // Ensure dark mode is restored even on error
+      const htmlEl = document.documentElement;
+      if (!htmlEl.classList.contains("dark")) {
+        const { theme } = { theme: "" }; // best-effort restore
+        htmlEl.classList.add("dark");
+      }
       toast.error("Failed to generate PDF");
     }
   };
