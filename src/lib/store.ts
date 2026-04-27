@@ -33,6 +33,9 @@ export interface WarningItem {
     position: string | null;
     companyName: string | null;
     photoUrl: string | null;
+    phone: string | null;
+    nationality: string | null;
+    idNumber: string | null;
   };
 }
 
@@ -52,6 +55,9 @@ export interface FineItem {
     position: string | null;
     companyName: string | null;
     photoUrl: string | null;
+    phone: string | null;
+    nationality: string | null;
+    idNumber: string | null;
   };
 }
 
@@ -72,6 +78,10 @@ interface AppState {
   popupWarnings: WarningItem[];
   popupFines: FineItem[];
 
+  // Delete request on employee detail page
+  activeDeleteRequestId: string | null;
+  activeDeleteReason: string | null;
+
   setView: (view: ViewType) => void;
   setSelectedEmployee: (id: string | null) => void;
   setSearchQuery: (query: string) => void;
@@ -86,6 +96,9 @@ interface AppState {
   setHighlightFine: (id: string | null) => void;
   setPopupWarnings: (warnings: WarningItem[]) => void;
   setPopupFines: (fines: FineItem[]) => void;
+
+  // Delete request on employee detail
+  setActiveDeleteRequest: (requestId: string | null, reason: string | null) => void;
 
   reset: () => void;
 }
@@ -105,6 +118,9 @@ const initialState = {
   highlightFineId: null as string | null,
   popupWarnings: [] as WarningItem[],
   popupFines: [] as FineItem[],
+
+  activeDeleteRequestId: null as string | null,
+  activeDeleteReason: null as string | null,
 };
 
 export const useAppStore = create<AppState>((set) => ({
@@ -124,6 +140,10 @@ export const useAppStore = create<AppState>((set) => ({
   setHighlightFine: (id) => set({ highlightFineId: id }),
   setPopupWarnings: (warnings) => set({ popupWarnings: warnings }),
   setPopupFines: (fines) => set({ popupFines: fines }),
+
+  // Delete request on employee detail
+  setActiveDeleteRequest: (requestId, reason) =>
+    set({ activeDeleteRequestId: requestId, activeDeleteReason: reason }),
 
   reset: () => set(initialState),
 }));

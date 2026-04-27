@@ -56,15 +56,23 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { employeeId, date, status, markedBy, dayName } = body;
+    const { employeeId, date, status, markedBy, dayName, overtimeHours } = body;
 
     // Compute dayName from date if not provided
     const computedDayName = dayName || getDayNameFromDate(date);
 
+    const data: any = { status, markedBy, dayName: computedDayName };
+    // Handle overtimeHours: only set when status is overtime
+    if (status === "overtime") {
+      data.overtimeHours = overtimeHours ? parseFloat(String(overtimeHours)) : 0;
+    } else {
+      data.overtimeHours = null;
+    }
+
     const attendance = await db.attendance.upsert({
       where: { employeeId_date: { employeeId, date } },
-      update: { status, markedBy, dayName: computedDayName },
-      create: { employeeId, date, status, markedBy, dayName: computedDayName },
+      update: data,
+      create: { employeeId, date, ...data },
     });
 
     // Auto-warning logic: if marking absent, check for 3 consecutive absences
@@ -129,6 +137,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Recalculate star rating for this employee
+    await recalculateStarRating(employeeId);
+
     return NextResponse.json(attendance);
   } catch (error) {
     console.error("Attendance POST error:", error);
@@ -139,10 +150,16 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, status, markedBy, dayName } = body;
+    const { id, status, markedBy, dayName, overtimeHours } = body;
 
     const data: any = { status, markedBy };
     if (dayName) data.dayName = dayName;
+    // Handle overtimeHours: only set when status is overtime
+    if (status === "overtime") {
+      data.overtimeHours = overtimeHours ? parseFloat(String(overtimeHours)) : 0;
+    } else if (status) {
+      data.overtimeHours = null;
+    }
 
     const attendance = await db.attendance.update({
       where: { id },
@@ -207,9 +224,82 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // Recalculate star rating for this employee
+    await recalculateStarRating(attendance.employeeId);
+
     return NextResponse.json(attendance);
   } catch (error) {
     console.error("Attendance PUT error:", error);
     return NextResponse.json({ error: "Failed" }, { status: 500 });
+  }
+}
+
+// ============================================================
+// STAR RATING CALCULATION
+// ============================================================
+// Everyone starts at 5.0
+// - Each absent day beyond 2 per month: -0.1
+// - Each fine: -1.0
+// - Each warning: -0.5
+// - Each overtime hour: +0.2
+// Clamped to 0.0 - 5.0
+
+async function recalculateStarRating(employeeId: string) {
+  try {
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+    const mm = String(currentMonth).padStart(2, "0");
+    const yyyy = String(currentYear);
+
+    // Get current month attendance
+    const monthAttendance = await db.attendance.findMany({
+      where: {
+        employeeId,
+        date: { endsWith: `-${mm}-${yyyy}` },
+      },
+    });
+
+    // Count absences this month
+    const absentCount = monthAttendance.filter((a) => a.status === "absent").length;
+
+    // Count overtime hours this month
+    const totalOvertimeHours = monthAttendance.reduce((sum, a) => {
+      return sum + (a.overtimeHours || 0);
+    }, 0);
+
+    // Count total fines for this employee (all time)
+    const fineCount = await db.fine.count({
+      where: { employeeId },
+    });
+
+    // Count total warnings for this employee (all time)
+    const warningCount = await db.warning.count({
+      where: { employeeId },
+    });
+
+    // Calculate rating
+    let rating = 5.0;
+    // Deduct for extra absences (beyond 2 per month)
+    if (absentCount > 2) {
+      rating -= (absentCount - 2) * 0.1;
+    }
+    // Deduct for fines
+    rating -= fineCount * 1.0;
+    // Deduct for warnings
+    rating -= warningCount * 0.5;
+    // Add for overtime
+    rating += totalOvertimeHours * 0.2;
+
+    // Clamp to 0.0 - 5.0
+    rating = Math.max(0.0, Math.min(5.0, Math.round(rating * 10) / 10));
+
+    // Update employee
+    await db.employee.update({
+      where: { id: employeeId },
+      data: { rating },
+    });
+  } catch (error) {
+    console.error("Star rating recalculation error:", error);
   }
 }

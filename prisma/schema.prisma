@@ -37,7 +37,7 @@ model Employee {
   createdBy       String?
 
   // New fields for CV format
-  rating          Int      @default(3) // 1-5 stars
+  rating          Float    @default(5.0) // 0.0-5.0 stars (auto-calculated)
   companyName     String?  // "Com. Name" in CV
   passportStatus  String?  // Passport Status
   idStatus        String?  // ID Status
@@ -52,15 +52,16 @@ model Employee {
 }
 
 model Attendance {
-  id          String   @id @default(cuid())
-  employeeId  String
-  date        String   // DD-MM-YYYY (e.g. 27-04-2026)
-  dayName     String?  // e.g. Monday
-  status      String   @default("present") // present, absent
-  markedBy    String?
-  createdAt   DateTime @default(now())
+  id             String   @id @default(cuid())
+  employeeId     String
+  date           String   // DD-MM-YYYY (e.g. 27-04-2026)
+  dayName        String?  // e.g. Monday
+  status         String   @default("present") // present, absent, no_site, overtime
+  overtimeHours  Float?   // Hours worked as overtime (only when status = overtime)
+  markedBy       String?
+  createdAt      DateTime @default(now())
 
-  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, date])
 }
